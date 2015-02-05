@@ -21,7 +21,7 @@ from sys import exc_info
 
 
 #this directory definition is changed in the source code at runtime which is probably a really bad idea but good for portability
-moviedir='/media/cmdata/datagoe/mazes/'#end
+moviedir='/media/ad3c0d78-899f-4356-8c89-3b212880eb69/data/20150107_Many_droplet_system_height_test_6mm_wide_15wtpcTTAB_5uL_50um_Droplets_2x_Olympus_4fps/'#end
 
 def GetBitmap(width=1, height=1, colour = (0,0,0) ):
     """Helper funcion to generate a wxBitmap of defined size and colour.
@@ -253,6 +253,7 @@ class MyFrame(wx.Frame):
         clustertab=wx.Panel(self.nb)
         openClMovB=wx.Button(clustertab,550,"Open movie...",size=(140,-1))
         self.getCluB=wx.Button(clustertab,501,"Get clusters",size=(140,-1))
+        self.convTrajCluB=wx.Button(clustertab,502,"Convert trajectories...",size=(140,-1))
         self.voroCheck=wx.CheckBox(clustertab, -1, label='Voronoi')
         self.clustNumCheck=wx.CheckBox(clustertab, -1, label='Label clusters')
         self.clustNumCheck.SetValue(True)
@@ -362,6 +363,7 @@ class MyFrame(wx.Frame):
         sbClAn = wx.StaticBox(clustertab, label="Movie analysis")
         sbsizerClAn = wx.StaticBoxSizer(sbClAn, wx.VERTICAL)
         sbsizerClAn.Add(self.getCluB, 0, wx.ALIGN_LEFT|wx.ALL,5)
+        sbsizerClAn.Add(self.convTrajCluB, 0, wx.ALIGN_LEFT|wx.ALL,5)
         sbsizerClAn.Add(self.voroCheck, 0, wx.ALIGN_LEFT|wx.ALL,5)
         sbsizerClAn.Add(self.clustNumCheck, 0, wx.ALIGN_LEFT|wx.ALL,5)
         vboxClusters.Add(sbsizerClAn)
@@ -418,6 +420,7 @@ class MyFrame(wx.Frame):
         self.Bind(wx.EVT_TEXT_ENTER, self.ReadParas, id=651)
         # bindings handling the image display (groupof radio buttons)
         self.Bind(wx.EVT_BUTTON, self.GetClusters, id=501)
+        self.Bind(wx.EVT_BUTTON, self.ConvClustTraj, id=502)
         self.Bind(wx.EVT_BUTTON, self.ResetCrop, id=652)
         for i in range(300,307): self.Bind(wx.EVT_RADIOBUTTON, self.ImgDisplay, id=i)
         for i in range(521,527): self.Bind(wx.EVT_RADIOBUTTON, self.ClImgDisplay, id=i)
@@ -974,6 +977,22 @@ class MyFrame(wx.Frame):
         self.movie.getClusters(thresh=self.parameters['thresh'],gkern=self.parameters['blur'],clsize=self.parameters['size'],channel=self.parameters['channel'],rng=framelim,spacing=self.parameters['spacing'], maskfile=self.movie.datadir+'mask.png')
         self.sb.SetStatusText(self.moviefile, 1)
         self.getCluB.Enable()
+        
+    def ConvClustTraj(self,event):
+        if os.path.exists(self.movie.datadir+'clusters.txt'): 
+            datafile=self.movie.datadir+"clusters.txt"
+        else: 
+            dlg = wx.FileDialog(self, "Select cluster data file", self.cdir, style=wx.OPEN)
+            if dlg.ShowModal() == wx.ID_OK:
+                datafile=dlg.GetPath()
+            else: 
+                datafile=""
+        if datafile!="":
+            self.convTrajCluB.Disable()
+            self.sb.SetStatusText("Working... Extracting trajectories from coordinates.",1)
+            self.movie.CoordtoTraj(tempfile=datafile)
+            self.sb.SetStatusText(self.moviefile, 1)
+            self.convTrajCluB.Enable()
 
     def GetTrajectories(self,event):
         self.getTrajB.Disable()

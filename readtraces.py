@@ -371,11 +371,11 @@ class movie():
         mov.release()
         return images
 
-    def CoordtoTraj(self, tempfile='temp',lenlim=12, delete=True, breakind=1e9):
+    def CoordtoTraj(self, tempfile='temp',lenlim=12, delete=True, breakind=1e9, maxdist=-1):
         t0=time()
         if delete:
             for f in glob(self.datadir+'trajectory*.txt'): os.remove(f)
-        tempfile=self.datadir+'temp'
+        if tempfile=='temp':tempfile=self.datadir+'temp'
         dataArr=np.loadtxt(tempfile)
         trajectorycount=0
         frames=sorted(list(set(dataArr[:,0])))
@@ -399,7 +399,8 @@ class movie():
                     del activetrajectories[tr.number]
             for blob in blobs: #if any circles are left in the set, open a new trajectory for each of them
                 trajectorycount+=1
-                activetrajectories[trajectorycount]=trajectory(np.array([[frames[i],blob[3],blob[4],blob[2]]]),trajectorycount, maxdist=3*blob[2]/np.pi)
+                if maxdist<0: md=3*blob[2]/np.pi
+                activetrajectories[trajectorycount]=trajectory(np.array([[frames[i],blob[3],blob[4],blob[2]]]),trajectorycount, maxdist=md)
                 #activetrajectories[trajectorycount].maxdist=5*np.sqrt(blob[]/np.pi) #initialise maximum allowed nearest neighbour distance = particle diameter
         print "trajectories:", len(activetrajectories)
         for tr in activetrajectories.values():
