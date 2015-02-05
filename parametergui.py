@@ -990,7 +990,7 @@ class MyFrame(wx.Frame):
         if datafile!="":
             self.convTrajCluB.Disable()
             self.sb.SetStatusText("Working... Extracting trajectories from coordinates.",1)
-            self.movie.CoordtoTraj(tempfile=datafile)
+            self.movie.CoordtoTraj(tempfile=datafile, lossmargin=1)
             self.sb.SetStatusText(self.moviefile, 1)
             self.convTrajCluB.Enable()
 

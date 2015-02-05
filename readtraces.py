@@ -371,7 +371,7 @@ class movie():
         mov.release()
         return images
 
-    def CoordtoTraj(self, tempfile='temp',lenlim=12, delete=True, breakind=1e9, maxdist=-1):
+    def CoordtoTraj(self, tempfile='temp',lenlim=12, delete=True, breakind=1e9, maxdist=-1, lossmargin=10):
         t0=time()
         if delete:
             for f in glob(self.datadir+'trajectory*.txt'): os.remove(f)
@@ -391,7 +391,7 @@ class movie():
                 breakind=1e9
                 print "break here?"
             for tr in activetrajectories.values():
-                blobs=tr.findNeighbour(blobs, frames[i], idx=3) #for each open trajectory, find corresponding particle in circle set
+                blobs=tr.findNeighbour(blobs, frames[i], idx=3, lossmargin=lossmargin) #for each open trajectory, find corresponding particle in circle set
                 if not tr.opened: #if a trajectory is closed in the process (no nearest neighbour found), move to closed trajectories.
                     if tr.data.shape[0]>lenlim:
                         np.savetxt(self.datadir+'trajectory%06d.txt'%tr.number, tr.data, fmt='%.2f')
@@ -537,10 +537,10 @@ class movie():
         for i in range(trmax):
             tr=self.trajectories[keys[i]]
             cl=color=cm.jet(i/np.float(len(keys)))
-            if tr.data.shape[0]>lenlimit:
+            if tr.data.shape[0]>lenlimit and len(tr.data.shape)>1:
+                print tr.number, tr.data.shape
                 pl.plot(tr.data[:,1],tr.data[:,2],lw=.3, color=cl)
                 pl.text(tr.data[0,1], tr.data[0,2], str(tr.number), color=cl,fontsize=6)
-                print tr.number, tr.data.shape
         pl.axis('off')
         pl.savefig(self.datadir+outname,dpi=600)
         pl.close('all')
