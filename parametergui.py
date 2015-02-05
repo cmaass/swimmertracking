@@ -896,7 +896,7 @@ class MyFrame(wx.Frame):
         self.threshContr.SetValue(str(self.parameters['thresh']))
         self.sphericityContr.SetValue(str(self.parameters['sphericity']))
         self.blurContr.SetValue(str(self.parameters['blur']))
-        if movie.typ=="3D stack": self.stCropContr.SetValue(str(self.movie.crop)[1:-1])
+        if self.movie.typ=="3D stack": self.stCropContr.SetValue(str(self.movie.crop)[1:-1])
         self.images['Original']=self.movie.getFrame(self.framenum)
         try: self.infoWin.Update()
         except AttributeError:
