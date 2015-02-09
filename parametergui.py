@@ -714,7 +714,7 @@ class MyFrame(wx.Frame):
                 if self.imType=='Particles':
                     blobs,contours=rt.extract_blobs(thresh, -1, self.parameters['size'], self.parameters['sphericity'], diskfit=True,returnCont=True, outpSpac=1) #TODO:why is diskfit hardcoded to True?
                     for b in range(len(blobs)):
-                        if blobs[b][-1]==0:
+                        if blobs[b][-2]==0:
                             if self.diskfitCheck.GetValue(): cv2.circle(self.images['Particles'],(np.int32(blobs[b][3]),np.int32(blobs[b][4])),np.int32(np.sqrt(blobs[b][2]/np.pi)),(255,120,0),2)
                             else:
                                 print contours[b]
@@ -771,7 +771,7 @@ class MyFrame(wx.Frame):
                 count = 0
                 contcount=blobs.shape[0]
                 if self.clustNumCheck.GetValue() and contcount>0:
-                    self.ShowParas(text=str(blobs[:,1:-2]))
+                    self.ShowParas(text=str(blobs[:,1:]))
                 for b in range(len(blobs)):
                     if self.clustNumCheck.GetValue():
                         cv2.putText(self.images['Clusters'],str(count), (int(blobs[count,3]),int(blobs[count,4])), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,0,0),2)
@@ -833,7 +833,7 @@ class MyFrame(wx.Frame):
                 if self.imType=='Particles':
                     blobs,contours=rt.extract_blobs(thresh, -1, self.parameters['size'], self.parameters['sphericity'], diskfit=True,returnCont=True, outpSpac=1)
                     for b in range(len(blobs)):
-                        if blobs[b][-1]==0:
+                        if blobs[b][-]==0:
                             if self.diskfitCheck.GetValue(): cv2.circle(self.images['Particles'],(np.int32(blobs[b][3]),np.int32(blobs[b][4])),np.int32(np.sqrt(blobs[b][2]/np.pi)),(255,120,0),2)
                             else:
                                 print contours[b]

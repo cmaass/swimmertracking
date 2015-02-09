@@ -212,14 +212,14 @@ class movie():
         try: os.remove(self.datadir+'temp')
         except OSError: pass
         dumpfile=open(self.datadir+'temp','a')
-        allblobs=np.array([]).reshape(0,7)
+        allblobs=np.array([]).reshape(0,8)
         counter=0
         while success and framenum<framelim[1]: #loop through frames
             framenum+=1
             if framenum%200==0:
                 print 'frame',framenum, 'time', str(timedelta(seconds=time()-tInit)), '# particles', counter #progress marker
                 np.savetxt(dumpfile,allblobs,fmt="%.2f")
-                allblobs=np.array([]).reshape(0,7)
+                allblobs=np.array([]).reshape(0,8)
             success,image=mov.read()
             if success:
                 im=image[:,:,channel].astype(float)
@@ -839,7 +839,7 @@ class imStack(movie):
             return False
 
 
-def extract_blobs(bwImg, framenum, blobsize=(0,1e5), sphericity=-1, diskfit=True, outpSpac=200,returnCont=False):
+def extract_blobs(bwImg, framenum, blobsize=(0,1e5), sphericity=-1, diskfit=True, outpSpac=200,returnCont=False, spherthresh=1e5):
     contours, hierarchy=cv2.findContours(bwImg,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
     blobs=[]
     if returnCont: listcont=[]
@@ -849,8 +849,9 @@ def extract_blobs(bwImg, framenum, blobsize=(0,1e5), sphericity=-1, diskfit=True
         (xm,ym),rm=cv2.minEnclosingCircle(cont)
         area= M['m00'] #adapt for aggregates
         marea=np.pi*rm**2
-        if sphericity>=1 and area>blobsize[0]:
-            spher=marea/area
+        if area>0: spher=marea/area
+        else:spher=0
+        if sphericity>=1 and area>blobsize[0] and spher<spherthresh:
             if spher>sphericity:
                 hull = cv2.convexHull(cont,returnPoints = False)
                 try:
@@ -863,8 +864,8 @@ def extract_blobs(bwImg, framenum, blobsize=(0,1e5), sphericity=-1, diskfit=True
                 except AttributeError, IndexError:
                 #no proper defects? just try to fit something into this contour
                     if blobsize[0]<area<blobsize[1]:
-                        if diskfit: blobs=blobs+[[framenum,0,marea,xm, ym, 0,-1]]
-                        else: blobs=blobs+[[framenum,0,area,M['m10']/M['m00'], M['m01']/M['m00'], 0,-1]]
+                        if diskfit: blobs=blobs+[[framenum,0,marea,xm, ym, 0,-1, spher]]
+                        else: blobs=blobs+[[framenum,0,area,M['m10']/M['m00'], M['m01']/M['m00'], 0,-1,spher]]
                         if returnCont: listcont+=[cont]
                     defectflag=False
                 if defectflag:
@@ -898,23 +899,23 @@ def extract_blobs(bwImg, framenum, blobsize=(0,1e5), sphericity=-1, diskfit=True
                                     inds=inds[(distAr-.5*cts[this,2])>0]
                             except IndexError: break
                         for circle in newcts:
-                            blobs=blobs+[[framenum,0,circle[2],circle[0], circle[1], 1,-1]]
+                            blobs=blobs+[[framenum,0,circle[2],circle[0], circle[1], 1,-1,spher]]
                             if returnCont: listcont+=[cont]
             elif area<blobsize[1]:
                 if diskfit:
-                    blobs=blobs+[[framenum,0,marea,xm, ym, 0,-1]]
+                    blobs=blobs+[[framenum,0,marea,xm, ym, 0,-1,spher]]
                     if returnCont: listcont+=[cont]
                 else:
                     x,y=M['m10']/M['m00'],M['m01']/M['m00']
-                    blobs=blobs+[[framenum,0,area,x,y, 0,-1]]
+                    blobs=blobs+[[framenum,0,area,x,y, 0,-1,spher]]
                     if returnCont: listcont+=[cont]
-        elif blobsize[0]<area<blobsize[1]:
+        elif blobsize[0]<area<blobsize[1] and spher<spherthresh:
             if diskfit:
-                blobs=blobs+[[framenum,0,marea,xm, ym, 0, -1]]
+                blobs=blobs+[[framenum,0,marea,xm, ym, 0, -1,spher]]
                 if returnCont: listcont+=[cont]
             else:
                 x,y=M['m10']/M['m00'],M['m01']/M['m00']
-                blobs=blobs+[[framenum,0,area,x,y, 0,-1]]
+                blobs=blobs+[[framenum,0,area,x,y, 0,-1,spher]]
                 if returnCont: listcont+=[cont]
     blobs=np.array(blobs)
     if len(blobs)>0:
