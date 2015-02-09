@@ -1,5 +1,5 @@
 import matplotlib
-matplotlib.use('Agg')
+#matplotlib.use('WXAgg')
 from matplotlib import pyplot as pl  #this is Python's main scientific plotting library.
 from matplotlib import cm
 import cv2 #computer vision library. interfaces with python over numpy arrays.

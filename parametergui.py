@@ -5,10 +5,13 @@
 
 import wx
 import wx.lib.scrolledpanel as scp
+import wxmpl
 import numpy as np
 from PIL import Image
 from matplotlib import pylab as pl
 from matplotlib import cm
+import matplotlib
+matplotlib.use('WXAgg')
 import os
 import io
 import pickle
@@ -63,6 +66,17 @@ class InfoWin(wx.Frame):
         self.text.SetValue(self.infotext)
 
 
+#check this: http://stackoverflow.com/questions/28375264/how-to-use-mouse-to-rotate-matplotlib-3d-plots-in-wxpython
+class StackWin(wxmpl.PlotFrame):
+    def __init__(self,parent):
+        wxmpl.PlotFrame.__init__(self, parent, -1, "stack plot", size=(400,400))
+        fig=self.get_figure()
+        axes=fig.gca()
+        x = np.arange(0.0, 2, 0.01)
+        y = np.sin(np.pi*x)
+        axes.plot(x,y)
+        print 'test'
+        
 
 class HistoWin(wx.Frame):
     """Window displaying RGB histogram of current image in semilog y. """
@@ -93,8 +107,6 @@ class HistoWin(wx.Frame):
         buf.seek(0)
         im=wx.ImageFromStream(buf)
         self.plot.SetBitmap(wx.BitmapFromImage(im))
-
-
 
 
 class MyPanel(scp.ScrolledPanel):
@@ -190,8 +202,6 @@ class MyFrame(wx.Frame):
         buttonPanel=wx.Panel(self)
         nbPanel = wx.Panel(self)
 
-
-
         threshLabel=wx.StaticText(paraPanel,-1,'Threshold')
         self.threshContr=wx.TextCtrl(paraPanel,200,'',size=(50,-1),style=wx.TE_PROCESS_ENTER)
         BGrngLabel=wx.StaticText(paraPanel,-1,'BG range')
@@ -281,6 +291,7 @@ class MyFrame(wx.Frame):
         wx.RadioButton(stacktab, 623, label='Particles')]
         self.stCropContr=wx.TextCtrl(stacktab,651,'',size=(140,-1), style=wx.TE_PROCESS_ENTER)
         stackResetCropB=wx.Button(stacktab,652,"Reset crop",size=(140,-1))
+        plotStackB=wx.Button(stacktab,653,"Plot stack...",size=(140,-1))
 
 
         #setting up the window layout with tons of nested sizers.
@@ -382,6 +393,7 @@ class MyFrame(wx.Frame):
         sbsizerSt = wx.StaticBoxSizer(sbSt, wx.VERTICAL)
         for but in self.sImstate: sbsizerSt.Add(but, 0, wx.ALIGN_LEFT|wx.ALL,5)
         vboxStack.Add(sbsizerSt)
+        vboxStack.Add(plotStackB, 0, wx.ALIGN_LEFT|wx.ALL,5)
         self.nb.AddPage(stacktab,'3D stack')
 
         vboxNB.Add(self.nb)
@@ -422,6 +434,7 @@ class MyFrame(wx.Frame):
         self.Bind(wx.EVT_BUTTON, self.GetClusters, id=501)
         self.Bind(wx.EVT_BUTTON, self.ConvClustTraj, id=502)
         self.Bind(wx.EVT_BUTTON, self.ResetCrop, id=652)
+        self.Bind(wx.EVT_BUTTON, self.PlotStack, id=653)
         for i in range(300,307): self.Bind(wx.EVT_RADIOBUTTON, self.ImgDisplay, id=i)
         for i in range(521,527): self.Bind(wx.EVT_RADIOBUTTON, self.ClImgDisplay, id=i)
         for i in range(621,623): self.Bind(wx.EVT_RADIOBUTTON, self.StImgDisplay, id=i)
@@ -833,7 +846,7 @@ class MyFrame(wx.Frame):
                 if self.imType=='Particles':
                     blobs,contours=rt.extract_blobs(thresh, -1, self.parameters['size'], self.parameters['sphericity'], diskfit=True,returnCont=True, outpSpac=1)
                     for b in range(len(blobs)):
-                        if blobs[b][-]==0:
+                        if blobs[b][-2]==0:
                             if self.diskfitCheck.GetValue(): cv2.circle(self.images['Particles'],(np.int32(blobs[b][3]),np.int32(blobs[b][4])),np.int32(np.sqrt(blobs[b][2]/np.pi)),(255,120,0),2)
                             else:
                                 print contours[b]
@@ -1023,6 +1036,11 @@ class MyFrame(wx.Frame):
             self.movie.crop=[0,0,self.movie.shape[0],self.movie.shape[1]]
             self.stCropContr.SetValue(str(self.movie.crop)[1:-1])
             self.StImgDisplay()
+            
+    def PlotStack(self,event):
+        self.stackwin=StackWin(self)
+        self.stackwin.Show()
+        
 
     def OnClose(self,event):
         self.Destroy()
