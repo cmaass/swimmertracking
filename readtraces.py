@@ -811,7 +811,10 @@ class imStack(movie):
         spex=os.path.splitext(os.path.basename(fname))
         search=re.sub('[0-9]',"?",spex[0])
         self.stack=sorted(glob(os.path.dirname(fname)+os.sep+search+spex[1]))
-        self.datadir=re.sub('[0-9]','',splitext(fname)[0])+'-data'+sep
+        test0,test1=self.stack[:2]
+        while test0!=test1: test0,test1=test0[:-1],test1[:-1]
+        while test0[-1] in '0123456789': test0=test0[:-1]
+        self.datadir=test0+'-data'+sep
         try:
             im=cv2.imread(self.stack[0],1)
             self.shape=im.shape[:2]
@@ -846,6 +849,9 @@ class imStack(movie):
         if type(kernel).__name__!='ndarray': kernel=np.array([1]).astype(np.uint8)
         if not exists(self.datadir):
             os.mkdir(self.datadir)
+        if delete:
+            try: os.remove(self.datadir+'coords.txt')
+            except: pass            
         dumpfile=open(self.datadir+'coords.txt','a')
         allblobs=np.array([]).reshape(0,8)
         counter=0
@@ -1037,6 +1043,7 @@ def lin_traj(x,y):
     mx=np.mean((x-np.roll(x,1))[1:])
     return np.array([x[-1]+mx, y[-1]+slope*mx])
 
+#http://stackoverflow.com/questions/24467972/calculate-area-of-polygon-given-x-y-coordinates
 def PolygonArea(corners):
     n = len(corners) # of corners
     area = 0.0
@@ -1046,3 +1053,12 @@ def PolygonArea(corners):
         area -= corners[j][0] * corners[i][1]
     area = abs(area) / 2.0
     return area
+    
+#http://stackoverflow.com/questions/21732123/convert-true-false-value-read-from-file-to-boolean
+def str_to_bool(s):
+    if s == 'True':
+        return True
+    elif s == 'False':
+        return False
+    else:
+        raise ValueError("Cannot covert {} to bool".format(s))
