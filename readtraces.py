@@ -185,8 +185,7 @@ class movie():
             raise
         cur.close()
         db.close()
-
-    def extractCoords(self,framelim=False, blobsize=False, threshold=False, kernel=False, delete=False, mask=False, channel=0, sphericity=-1, diskfit=True, blur=1):
+    def extractCoords(self,framelim=False, blobsize=False, threshold=False, kernel=False, delete=False, mask=False, channel=0, sphericity=-1, diskfit=True, blur=1,crop=False):
         if not framelim: framelim=self.framelim
         if not blobsize: blobsize=self.blobsize
         if not threshold: threshold=self.threshold
@@ -812,7 +811,7 @@ class imStack(movie):
         spex=os.path.splitext(os.path.basename(fname))
         search=re.sub('[0-9]',"?",spex[0])
         self.stack=sorted(glob(os.path.dirname(fname)+os.sep+search+spex[1]))
-        self.datadir=splitext(fname)[0]+'-data'+sep
+        self.datadir=re.sub('[0-9]','',splitext(fname)[0])+'-data'+sep
         try:
             im=cv2.imread(self.stack[0],1)
             self.shape=im.shape[:2]
@@ -837,6 +836,45 @@ class imStack(movie):
             return image
         except:
             return False
+	  
+    def extractCoords(self,framelim=False, blobsize=False, threshold=False, kernel=False, delete=False, mask=False, channel=0, sphericity=-1, diskfit=True, blur=1,invert=False,crop=False): #fix the argument list! it's a total disgrace...
+	tInit=time()
+        if not framelim: framelim=self.framelim
+        if not blobsize: blobsize=self.blobsize
+        if not threshold: threshold=self.threshold
+        if not crop: crop=self.crop
+        if type(kernel).__name__!='ndarray': kernel=np.array([1]).astype(np.uint8)
+        if not exists(self.datadir):
+            os.mkdir(self.datadir)
+        dumpfile=open(self.datadir+'coords.txt','a')
+        allblobs=np.array([]).reshape(0,8)
+        counter=0
+        for i in range(len(self.stack)):
+            if i%200==0:
+                print 'frame',i, 'time', str(timedelta(seconds=time()-tInit)), '# particles', counter #progress marker
+                np.savetxt(dumpfile,allblobs,fmt="%.2f")
+                allblobs=np.array([]).reshape(0,8)
+            image=self.getFrame(i)
+            if type(image).__name__=='ndarray':
+                if image.shape[:2]!=(crop[2]-crop[0],crop[3]-crop[1]):
+                    if len(image.shape)==2: image=image[crop[0]:crop[2],crop[1]:crop[3]]
+                    if len(image.shape)==3: image=image[crop[0]:crop[2],crop[1]:crop[3],:]
+                if len(image.shape)>2:
+                    image=image[:,:,channel].astype(float)
+                image=mxContr(image) #TODO: this might be a few rescalings too many. try to make this simpler, but make it work first
+                thresh=mxContr((image<threshold).astype(int))
+                if type(kernel).__name__=='ndarray': thresh=cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
+                if invert: thresh=255-thresh
+                blobs=extract_blobs(thresh,i,sphericity=sphericity,blobsize=blobsize,diskfit=diskfit)
+                counter=blobs.shape[0]
+                try: allblobs=np.vstack((allblobs,blobs))
+                except ValueError:
+                    pass
+                    #print "Value Error!", allblobs.shape, blobs.shape
+        np.savetxt(dumpfile,allblobs,fmt="%.2f")
+        dumpfile.close()
+        with open(self.datadir+'coords.txt','r') as f: tempdata=f.read()[:-1]
+        with open(self.datadir+'coords.txt','w') as f: f.write(tempdata)
 
 
 def extract_blobs(bwImg, framenum, blobsize=(0,1e5), sphericity=-1, diskfit=True, outpSpac=200,returnCont=False, spherthresh=1e5):

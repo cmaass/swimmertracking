@@ -12,6 +12,13 @@ from matplotlib import pylab as pl
 from matplotlib import cm
 import matplotlib
 matplotlib.use('WXAgg')
+matplotlib.use('WXAgg')
+from matplotlib.backends.backend_wxagg import FigureCanvasWxAgg as FigureCanvas
+
+from matplotlib.backends.backend_wx import NavigationToolbar2Wx
+
+from matplotlib.figure import Figure
+from mpl_toolkits.mplot3d import Axes3D
 import os
 import io
 import pickle
@@ -24,7 +31,7 @@ from sys import exc_info
 
 
 #this directory definition is changed in the source code at runtime which is probably a really bad idea but good for portability
-moviedir='/media/ad3c0d78-899f-4356-8c89-3b212880eb69/data/20150107_Many_droplet_system_height_test_6mm_wide_15wtpcTTAB_5uL_50um_Droplets_2x_Olympus_4fps/'#end
+moviedir='/windows/D/datagoe/gunnar/acrylamide/'#end
 
 def GetBitmap(width=1, height=1, colour = (0,0,0) ):
     """Helper funcion to generate a wxBitmap of defined size and colour.
@@ -65,17 +72,56 @@ class InfoWin(wx.Frame):
         else: self.infotext=text
         self.text.SetValue(self.infotext)
 
-
-#check this: http://stackoverflow.com/questions/28375264/how-to-use-mouse-to-rotate-matplotlib-3d-plots-in-wxpython
-class StackWin(wxmpl.PlotFrame):
+#source:
+#http://matplotlib.org/examples/user_interfaces/embedding_in_wx2.html
+class StackWin(wx.Frame):
     def __init__(self,parent):
-        wxmpl.PlotFrame.__init__(self, parent, -1, "stack plot", size=(400,400))
-        fig=self.get_figure()
-        axes=fig.gca()
-        x = np.arange(0.0, 2, 0.01)
-        y = np.sin(np.pi*x)
-        axes.plot(x,y)
-        print 'test'
+        wx.Frame.__init__(self,parent,-1, 'Stack plot',size=(550,350))
+
+        self.SetBackgroundColour(wx.NamedColor("WHITE"))
+
+        self.figure = Figure()
+        self.canvas = FigureCanvas(self, -1, self.figure)
+        self.axes = Axes3D(self.figure)
+        
+        xs = np.random.rand(100)
+        ys = np.random.rand(100)
+        zs = np.random.rand(100)
+        self.axes.scatter(xs, ys, zs)
+
+        
+        self.sizer = wx.BoxSizer(wx.VERTICAL)
+        self.sizer.Add(self.canvas, 1, wx.LEFT | wx.TOP | wx.GROW)
+        self.SetSizer(self.sizer)
+        self.Fit()
+
+        self.add_toolbar() # comment this out for no toolbar
+
+
+    def add_toolbar(self):
+        self.toolbar = NavigationToolbar2Wx(self.canvas)
+        self.toolbar.Realize()
+        if wx.Platform == '__WXMAC__':
+            # Mac platform (OSX 10.3, MacPython) does not seem to cope with
+            # having a toolbar in a sizer. This work-around gets the buttons
+            # back, but at the expense of having the toolbar at the top
+            self.SetToolBar(self.toolbar)
+        else:
+            # On Windows platform, default window size is incorrect, so set
+            # toolbar width to figure width.
+            tw, th = self.toolbar.GetSizeTuple()
+            fw, fh = self.canvas.GetSizeTuple()
+            # By adding toolbar in sizer, we are able to put it at the bottom
+            # of the frame - so appearance is closer to GTK version.
+            # As noted above, doesn't work for Mac.
+            self.toolbar.SetSize(wx.Size(fw, th))
+            self.sizer.Add(self.toolbar, 0, wx.LEFT | wx.EXPAND)
+        # update the axes menu on the toolbar
+        self.toolbar.update()
+
+
+    def OnPaint(self, event):
+        self.canvas.draw()
         
 
 class HistoWin(wx.Frame):
@@ -165,6 +211,7 @@ class MyImage(wx.StaticBitmap):
             pt=event.GetPosition()
             pt=self.parent.CalcUnscrolledPosition(pt)
             self.pparent.movie.crop=[oldcrop[0]+self.savept[0], oldcrop[1]+self.savept[1], oldcrop[0]+pt[0], oldcrop[1]+pt[1]]
+            self.pparent.parameters['crop']=self.pparent.movie.crop
             self.pparent.stCropContr.SetValue(str(self.pparent.movie.crop)[1:-1])
             self.pparent.StImgDisplay()
             
@@ -291,7 +338,8 @@ class MyFrame(wx.Frame):
         wx.RadioButton(stacktab, 623, label='Particles')]
         self.stCropContr=wx.TextCtrl(stacktab,651,'',size=(140,-1), style=wx.TE_PROCESS_ENTER)
         stackResetCropB=wx.Button(stacktab,652,"Reset crop",size=(140,-1))
-        plotStackB=wx.Button(stacktab,653,"Plot stack...",size=(140,-1))
+        self.getStCoordB=wx.Button(stacktab,653,"Get coordinates",size=(140,-1))
+        plotStackB=wx.Button(stacktab,654,"Plot stack...",size=(140,-1))
 
 
         #setting up the window layout with tons of nested sizers.
@@ -394,6 +442,7 @@ class MyFrame(wx.Frame):
         for but in self.sImstate: sbsizerSt.Add(but, 0, wx.ALIGN_LEFT|wx.ALL,5)
         vboxStack.Add(sbsizerSt)
         vboxStack.Add(plotStackB, 0, wx.ALIGN_LEFT|wx.ALL,5)
+        vboxStack.Add(self.getStCoordB, 0, wx.ALIGN_LEFT|wx.ALL,5)
         self.nb.AddPage(stacktab,'3D stack')
 
         vboxNB.Add(self.nb)
@@ -434,7 +483,8 @@ class MyFrame(wx.Frame):
         self.Bind(wx.EVT_BUTTON, self.GetClusters, id=501)
         self.Bind(wx.EVT_BUTTON, self.ConvClustTraj, id=502)
         self.Bind(wx.EVT_BUTTON, self.ResetCrop, id=652)
-        self.Bind(wx.EVT_BUTTON, self.PlotStack, id=653)
+        self.Bind(wx.EVT_BUTTON, self.GetCoordinates, id=653)
+        self.Bind(wx.EVT_BUTTON, self.PlotStack, id=654)
         for i in range(300,307): self.Bind(wx.EVT_RADIOBUTTON, self.ImgDisplay, id=i)
         for i in range(521,527): self.Bind(wx.EVT_RADIOBUTTON, self.ClImgDisplay, id=i)
         for i in range(621,623): self.Bind(wx.EVT_RADIOBUTTON, self.StImgDisplay, id=i)
@@ -447,7 +497,7 @@ class MyFrame(wx.Frame):
         self.moviefile=''
         self.movie=rt.nomovie()
         self.framenum=0
-        self.parameters={'imsize':(0,0),'frames':0, 'framerate':0., 'thresh':120, 'size':(5,90), 'struct':5, 'sphericity':-1.0, 'channel':0, 'blur':1,'spacing':1}
+        self.parameters={'imsize':(0,0),'frames':0, 'framerate':0., 'thresh':120, 'size':(5,90), 'struct':5, 'sphericity':-1.0, 'channel':0, 'blur':1,'spacing':1,'crop':[0]*4}
         #erosion/dilation kernel. basically, a circle of radius "struct" as a numpy array.
         if self.parameters['struct']>0: self.kernel= cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(self.parameters['struct'],self.parameters['struct']))
         else: self.kernel=False
@@ -900,7 +950,9 @@ class MyFrame(wx.Frame):
             self.parameters['spacing']=int(self.frameSpacContr.GetValue())
         if evID==651:
             if self.movie.typ=="3D stack":
-                try: self.movie.crop=[int(i) for i in self.stCropContr.GetValue().split(',')]
+                try: 
+		  self.movie.crop=[int(i) for i in self.stCropContr.GetValue().split(',')]
+		  self.parameters['crop']=self.movie.crop
                 except: raise
         self.frameContr.SetValue(str(self.framenum))
         self.frameSpacContr.SetValue(str(self.parameters['spacing']))
@@ -939,9 +991,9 @@ class MyFrame(wx.Frame):
                 t=t.split(': ')
                 if t[0].strip() in ['struct','thresh','frames', 'channel','blur','spacing']:#integer parameters
                     self.parameters[t[0]]=int(t[1])
-                if t[0].strip() in ['size','imsize']:#tuple parameters
+                if t[0].strip() in ['size','imsize', 'crop']:#tuple parameters
                     tsplit=t[1][1:-1].split(',')
-                    self.parameters[t[0]]=(int(tsplit[0]),int(tsplit[1]))
+                    self.parameters[t[0]]=tuple([int(it) for it in tsplit])
                 if t[0].strip() in ['framerate','sphericity']:#float parameters
                     self.parameters[t[0]]=float(t[1])
                 if t[0].strip() == 'channel':
@@ -954,6 +1006,7 @@ class MyFrame(wx.Frame):
             self.sphericityContr.SetValue("%.2f"%self.parameters['sphericity'])
             self.blurContr.SetValue("%d"%self.parameters['blur'])
             self.frameSpacContr.SetValue("%d"%self.parameters['spacing'])
+            self.stCropContr.SetValue(str(self.parameters['crop']).replace(' ','')[1:-1])
             self.ShowParas()
         except:
             print "Ooops... Try a different file?"
@@ -968,10 +1021,12 @@ class MyFrame(wx.Frame):
             framelim=(int(lim.split(',')[0]),int(lim.split(',')[1]))
         except:
             framelim=(0,self.parameters['frames'])
-        if self.maskCheck.GetValue(): mask=self.movie.datadir+'mask.png'
+        if self.maskCheck.GetValue(): 
+	  try: mask=self.movie.datadir+'mask.png'
+	  except: mask=False
         else: mask=False
         self.parameters['channel']=int(self.channelCB.GetValue())
-        self.movie.extractCoords(framelim=framelim, blobsize=self.parameters['size'], threshold=self.parameters['thresh'],kernel=self.kernel, delete=True, mask=mask,channel=self.parameters['channel'], sphericity=self.parameters['sphericity'],diskfit=self.diskfitCheck.GetValue())
+        self.movie.extractCoords(framelim=framelim, blobsize=self.parameters['size'], threshold=self.parameters['thresh'],kernel=self.kernel, delete=True, mask=mask,channel=self.parameters['channel'], sphericity=self.parameters['sphericity'],diskfit=self.diskfitCheck.GetValue(), crop=self.parameters['crop'], invert=self.invCheck.GetValue())
         self.sb.SetStatusText(self.moviefile, 1)
         self.getCoordB.Enable()
 
@@ -1034,6 +1089,7 @@ class MyFrame(wx.Frame):
     def ResetCrop(self,event):
         if self.movie.typ=='3D stack':
             self.movie.crop=[0,0,self.movie.shape[0],self.movie.shape[1]]
+            self.parameters['crop']=self.movie.crop
             self.stCropContr.SetValue(str(self.movie.crop)[1:-1])
             self.StImgDisplay()
             
