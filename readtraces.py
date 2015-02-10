@@ -230,7 +230,8 @@ class movie():
                 im=mxContr(im) #TODO: this might be a few rescalings too many. try to make this simpler, but make it work first
                 thresh=mxContr((im<threshold).astype(int))
                 if type(kernel).__name__=='ndarray': thresh=cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
-                blobs=extract_blobs(thresh,framenum,sphericity=sphericity,blobsize=blobsize,diskfit=diskfit)
+                if amax(thresh)!=amin(thresh): blobs=extract_blobs(thresh,framenum,sphericity=sphericity,blobsize=blobsize,diskfit=diskfit)
+                else: blobs=np.array([]).reshape(0,8)
                 counter=blobs.shape[0]
                 try: allblobs=np.vstack((allblobs,blobs))
                 except ValueError:
@@ -448,7 +449,8 @@ class movie():
                 thresh=mxContr((im<threshold).astype(int))
                 if type(kernel).__name__=='ndarray': thresh=cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
                 if invert: thresh=255-thresh
-                blobs=extract_blobs(thresh,framenum,blobsize=blobsize,sphericity=sphericity, outpSpac=outpSpac, diskfit=diskfit)
+                if amax(thresh)!=amin(thresh): blobs=extract_blobs(thresh,framenum,blobsize=blobsize,sphericity=sphericity, outpSpac=outpSpac, diskfit=diskfit)
+                else: blobs=np.array([]).reshape(0,8)
                 if framenum>framelim[0]:
                     for tr in activetrajectories.values():
                         blobs=tr.findNeighbour(blobs, framenum, idx=3) #for each open trajectory, find corresponding particle in circle set
@@ -867,11 +869,12 @@ class imStack(movie):
                     if len(image.shape)==3: image=image[crop[0]:crop[2],crop[1]:crop[3],:]
                 if len(image.shape)>2:
                     image=image[:,:,channel].astype(float)
-                image=mxContr(image) #TODO: this might be a few rescalings too many. try to make this simpler, but make it work first
+                #image=mxContr(image) #TODO: this might be a few rescalings too many. try to make this simpler, but make it work first
                 thresh=mxContr((image<threshold).astype(int))
                 if type(kernel).__name__=='ndarray': thresh=cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
                 if invert: thresh=255-thresh
-                blobs=extract_blobs(thresh,i,sphericity=sphericity,blobsize=blobsize,diskfit=diskfit)
+                if np.amin(thresh)!=np.amax(thresh): blobs=extract_blobs(thresh,i,sphericity=sphericity,blobsize=blobsize,diskfit=diskfit)
+                else: blobs=np.array([]).reshape(0,8)
                 counter=blobs.shape[0]
                 try: allblobs=np.vstack((allblobs,blobs))
                 except ValueError:
@@ -983,7 +986,7 @@ def mxContr(data):
         return (255*(np.array(data)-mn)/(mx-mn)).astype(np.uint8)
     else:
         print 'Warning, monochrome image!'
-        return 0.*np.array(data)
+        return 0.*np.array(data).astype(np.uint8)
 
 def stitchMovies(mlist, outname=None, decim=10,scale=1, crop=[0,0,0,0], frate=24,channel=-1, invert=False, ims=False, rotation=0):
     """crop values: [left, bottom, right, top]"""

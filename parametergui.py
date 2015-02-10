@@ -31,7 +31,7 @@ from sys import exc_info
 
 
 #this directory definition is changed in the source code at runtime which is probably a really bad idea but good for portability
-moviedir='/media/cmdata/datagoe/gunnar/acrylamide-140209/'#end
+moviedir='/windows/D/datagoe/gunnar/gelatine/down/'#end
 
 def GetBitmap(width=1, height=1, colour = (0,0,0) ):
     """Helper funcion to generate a wxBitmap of defined size and colour.
@@ -77,17 +77,22 @@ class InfoWin(wx.Frame):
 class StackWin(wx.Frame):
     def __init__(self,parent):
         wx.Frame.__init__(self,parent,-1, 'Stack plot',size=(550,350))
-
+	self.parent=parent
         self.SetBackgroundColour(wx.NamedColor("WHITE"))
 
         self.figure = Figure()
         self.canvas = FigureCanvas(self, -1, self.figure)
         self.axes = Axes3D(self.figure)
         
-        xs = np.random.rand(100)
-        ys = np.random.rand(100)
-        zs = np.random.rand(100)
-        self.axes.scatter(xs, ys, zs)
+        try: 
+	  data=np.loadtxt(self.parent.movie.datadir+'coords.txt')
+	  xs=data[:,3]
+	  ys=data[:,4]
+	  zs=data[:,0]
+	  ss=data[:,2]
+	  self.axes.scatter(xs, ys, zs,s=ss)
+	except: 
+	  print "sorry, plot failed! Is there a coordinate file?"
 
         
         self.sizer = wx.BoxSizer(wx.VERTICAL)
@@ -901,7 +906,8 @@ class MyFrame(wx.Frame):
                 self.images['Threshold']=thresh.copy()
                 self.images['Particles']=self.images['Original'].copy()
                 if self.imType=='Particles':
-                    blobs,contours=rt.extract_blobs(thresh, -1, self.parameters['size'], self.parameters['sphericity'], diskfit=True,returnCont=True, outpSpac=1)
+		    if np.amin(thresh)!=np.amax(thresh): blobs,contours=rt.extract_blobs(thresh, -1, self.parameters['size'], self.parameters['sphericity'], diskfit=True,returnCont=True, outpSpac=1)
+		    else: blobs,contours=np.array([]).reshape(0,8),[]
                     for b in range(len(blobs)):
                         if blobs[b][-2]==0:
                             if self.diskfitCheck.GetValue(): cv2.circle(self.images['Particles'],(np.int32(blobs[b][3]),np.int32(blobs[b][4])),np.int32(np.sqrt(blobs[b][2]/np.pi)),(255,120,0),2)
