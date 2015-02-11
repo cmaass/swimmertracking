@@ -31,7 +31,7 @@ from sys import exc_info
 
 
 #this directory definition is changed in the source code at runtime which is probably a really bad idea but good for portability
-moviedir='/windows/D/datagoe/gunnar/gelatine/down/'#end
+moviedir='/media/cmdata/datagoe/gunnar/acrylamide-140211/'#end
 
 def GetBitmap(width=1, height=1, colour = (0,0,0) ):
     """Helper funcion to generate a wxBitmap of defined size and colour.
@@ -91,6 +91,8 @@ class StackWin(wx.Frame):
 	  zs=data[:,0]
 	  ss=data[:,2]
 	  self.axes.scatter(xs, ys, zs,s=ss)
+	  scaling = np.array([getattr(self.axes, 'get_{}lim'.format(dim))() for dim in 'xyz'])
+	  self.axes.auto_scale_xyz(*[[np.min(scaling), np.max(scaling)]]*3)
 	except: 
 	  print "sorry, plot failed! Is there a coordinate file?"
 
@@ -215,7 +217,7 @@ class MyImage(wx.StaticBitmap):
             oldcrop=self.pparent.movie.crop
             pt=event.GetPosition()
             pt=self.parent.CalcUnscrolledPosition(pt)
-            self.pparent.movie.crop=[oldcrop[0]+self.savept[0], oldcrop[1]+self.savept[1], oldcrop[0]+pt[0], oldcrop[1]+pt[1]]
+            self.pparent.movie.crop=[oldcrop[1]+self.savept[1],oldcrop[0]+self.savept[0],oldcrop[1]+pt[1],oldcrop[0]+pt[0]]
             self.pparent.parameters['crop']=self.pparent.movie.crop
             self.pparent.stCropContr.SetValue(str(self.pparent.movie.crop)[1:-1])
             self.pparent.StImgDisplay()
