@@ -833,7 +833,7 @@ class MyFrame(wx.Frame):
                 if self.imType=='Particles':
                     blobs,contours=rt.extract_blobs(thresh, -1, self.parameters['size'], self.parameters['sphericity'], diskfit=True,returnCont=True, outpSpac=1)
                     for b in range(len(blobs)):
-                        if blobs[b][-]==0:
+                        if blobs[b][-2]==0:
                             if self.diskfitCheck.GetValue(): cv2.circle(self.images['Particles'],(np.int32(blobs[b][3]),np.int32(blobs[b][4])),np.int32(np.sqrt(blobs[b][2]/np.pi)),(255,120,0),2)
                             else:
                                 print contours[b]
