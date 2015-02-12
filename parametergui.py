@@ -31,7 +31,7 @@ from sys import exc_info
 
 
 #this directory definition is changed in the source code at runtime which is probably a really bad idea but good for portability
-moviedir='/media/cmdata/datagoe/gunnar/acrylamide-140211/'#end
+moviedir='/media/cmdata/datagoe/gunnar/acrylamide-140210/'#end
 
 def GetBitmap(width=1, height=1, colour = (0,0,0) ):
     """Helper funcion to generate a wxBitmap of defined size and colour.
@@ -506,14 +506,19 @@ class MyFrame(wx.Frame):
         self.moviefile=''
         self.movie=rt.nomovie()
         self.framenum=0
-        self.parameters={'imsize':(0,0),'frames':0, 'framerate':0., 'thresh':120, 'size':(5,90), 'struct':5, 'sphericity':-1.0, 'channel':0, 'blur':1,'spacing':1,'crop':[0]*4, 'sizepreview':True, 'invert':False, 'diskfit':False, 'mask':True}
+        self.parameters={
+            'framerate':0.,'sphericity':-1.0,
+            'imsize':(0,0),'blobsize':(5,90),'crop':[0]*4, 'framelim':(0,0),
+            'frames':0,  'threshold':120, 'struct':5,  'channel':0, 'blur':1,'spacing':1,
+            'sizepreview':True, 'invert':False, 'diskfit':False, 'mask':True
+        }
         #erosion/dilation kernel. basically, a circle of radius "struct" as a numpy array.
         if self.parameters['struct']>0: self.kernel= cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(self.parameters['struct'],self.parameters['struct']))
         else: self.kernel=False
         self.strContr.SetValue(str(self.parameters['struct']))
-        self.threshContr.SetValue(str(self.parameters['thresh']))
-        self.psizeContr.SetValue(str(self.parameters['size'])[1:-1])
-        self.frameMinMaxContr.SetValue("%d,%d"%(0,self.parameters['frames']))
+        self.threshContr.SetValue(str(self.parameters['threshold']))
+        self.psizeContr.SetValue(str(self.parameters['blobsize'])[1:-1])
+        self.frameMinMaxContr.SetValue("%d,%d"%self.parameters['framelim'])
         self.frameSpacContr.SetValue("%d"%(self.parameters['spacing']))
         self.blurContr.SetValue(str(self.parameters['blur']))
         self.sizeCheck.SetValue(self.parameters['sizepreview'])
@@ -556,10 +561,12 @@ class MyFrame(wx.Frame):
                 self.parameters['imsize']=(int(re.search('(?<=ID_VIDEO_WIDTH=)[0-9]+',result).group()),int(re.search('(?<=ID_VIDEO_HEIGHT=)[0-9]+',result).group()))
                 self.parameters['framerate']=float(re.search('(?<=ID_VIDEO_FPS=)[0-9.]+',result).group())
                 self.parameters['frames']=int(round(float(re.search('(?<=ID_LENGTH=)[0-9.]+',result).group())*self.parameters['framerate']))
+                self.parameters['framelim']=(0,self.parameters['frames'])
             except:
                 self.parameters['imsize']=(0,0)
-                self.parameter['framerate']=1.
-                self.paramters['frames']=0
+                self.parameters['framerate']=1.
+                self.parameters['frames']=0
+                self.parameters['framelim']=(0,0)
             self.movie=rt.movie(self.moviefile)
             self.images['Original']=self.movie.getFrame(self.framenum)
             self.frameSldr.SetMin(0)
@@ -588,7 +595,7 @@ class MyFrame(wx.Frame):
             self.scp.im.SetBitmap(wx.BitmapFromImage(im))
             self.scp.im.points=[]
             self.scp.im.axes=[]
-            self.frameMinMaxContr.SetValue("%d,%d"%(0,self.parameters['frames']))
+            self.frameMinMaxContr.SetValue("%d,%d"%self.parameters['framelim'])
             if os.path.exists(self.movie.datadir+'paras.txt'): self.ReadParasFromFile(filename=self.movie.datadir+'paras.txt')
             f = self.sb.GetFont()
             dc = wx.WindowDC(self.sb)
@@ -604,7 +611,7 @@ class MyFrame(wx.Frame):
             self.moviefile=dlg.GetPath()
             self.cdir=os.path.dirname(dlg.GetPath())+os.sep
             print self.cdir
-            if os.name=='posix': #this assumes you installed mplayer!
+            if os.name=='posix': 
                 with open(os.path.abspath(__file__), 'r') as f:
                     text=f.read()
                     text=re.sub("(?<=\nmoviedir=').*?(?='#end)",self.cdir,text)
@@ -612,9 +619,7 @@ class MyFrame(wx.Frame):
                     f.write(text)
             self.movie=rt.imStack(self.moviefile)
             self.images['Original']=cv2.imread(self.movie.stack[0],1)
-            self.parameters['imsize']=self.movie.shape
-            self.parameters['framerate']=-1
-            self.parameters['frames']=self.movie.frames
+            self.parameters=self.movie.parameters
             self.frameSldr.SetMin(0)
             self.frameSldr.SetMax(self.parameters['frames'])
             self.frameSldr.SetValue(0)
@@ -640,7 +645,7 @@ class MyFrame(wx.Frame):
             self.scp.im.SetBitmap(wx.BitmapFromImage(im))
             self.scp.im.points=[]
             self.scp.im.axes=[]
-            self.frameMinMaxContr.SetValue("%d,%d"%(0,self.parameters['frames']))
+            self.frameMinMaxContr.SetValue("%d,%d"%self.parameters['framelim'])
             if os.path.exists(self.movie.datadir+'paras.txt'): self.ReadParasFromFile(filename=self.movie.datadir+'paras.txt')
             f = self.sb.GetFont()
             dc = wx.WindowDC(self.sb)
@@ -669,6 +674,7 @@ class MyFrame(wx.Frame):
             self.parameters['imsize']=(int(re.search('(?<=ID_VIDEO_WIDTH=)[0-9]+',result).group()),int(re.search('(?<=ID_VIDEO_HEIGHT=)[0-9]+',result).group()))
             self.parameters['framerate']=float(re.search('(?<=ID_VIDEO_FPS=)[0-9.]+',result).group())
             self.parameters['frames']=int(round(float(re.search('(?<=ID_LENGTH=)[0-9.]+',result).group())*self.parameters['framerate']))
+            self.parameters['framelim']=(0,self.parameters['frames'])
             self.frameSldr.SetMin(0)
             self.frameSldr.SetMax(self.parameters['frames'])
             self.frameSldr.SetValue(0)
@@ -695,7 +701,7 @@ class MyFrame(wx.Frame):
             self.scp.im.SetBitmap(wx.BitmapFromImage(im))
             self.scp.im.points=[]
             self.scp.im.axes=[]
-            self.frameMinMaxContr.SetValue("%d,%d"%(0,self.parameters['frames']))
+            self.frameMinMaxContr.SetValue("%d,%d"%self.parameters['framelim'])
             if os.path.exists(self.movie.datadir+'paras.txt'): self.ReadParasFromFile(filename=self.movie.datadir+'paras.txt')
             f = self.sb.GetFont()
             dc = wx.WindowDC(self.sb)
@@ -781,7 +787,7 @@ class MyFrame(wx.Frame):
                     self.images['Single channel'] = image.copy()
                 bgsub=image.astype(float)-self.movie.bg
                 self.images['BG treated']=rt.mxContr(bgsub)*mask+255*(1-mask)
-                thresh=rt.mxContr((self.images['BG treated']<self.parameters['thresh']).astype(int))
+                thresh=rt.mxContr((self.images['BG treated']<self.parameters['threshold']).astype(int))
                 if self.parameters['struct']>0:
                     thresh=cv2.morphologyEx(thresh, cv2.MORPH_OPEN, self.kernel)
                 if self.invCheck.GetValue(): thresh=255-thresh
@@ -789,7 +795,7 @@ class MyFrame(wx.Frame):
                 #contours, hierarchy=cv2.findContours(thresh,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
                 self.images['Particles']=self.images['Original'].copy()
                 if self.imType=='Particles':
-                    blobs,contours=rt.extract_blobs(thresh, -1, self.parameters['size'], self.parameters['sphericity'], diskfit=True,returnCont=True, outpSpac=1) #TODO:why is diskfit hardcoded to True?
+                    blobs,contours=rt.extract_blobs(thresh, -1, self.parameters['blobsize'], self.parameters['sphericity'], diskfit=True,returnCont=True, outpSpac=1) #TODO:why is diskfit hardcoded to True?
                     for b in range(len(blobs)):
                         if blobs[b][-2]==0:
                             if self.diskfitCheck.GetValue(): cv2.circle(self.images['Particles'],(np.int32(blobs[b][3]),np.int32(blobs[b][4])),np.int32(np.sqrt(blobs[b][2]/np.pi)),(255,120,0),2)
@@ -803,8 +809,8 @@ class MyFrame(wx.Frame):
                                 cv2.drawContours(self.images['Particles'],[contours[b]],-1,(0,255,120),2)
                     contcount=blobs.shape[0]
                     if self.sizeCheck.GetValue():
-                        r1=np.ceil(np.sqrt(self.parameters['size'][0]/np.pi))
-                        r2=np.ceil(np.sqrt(self.parameters['size'][1]/np.pi))
+                        r1=np.ceil(np.sqrt(self.parameters['blobsize'][0]/np.pi))
+                        r2=np.ceil(np.sqrt(self.parameters['blobsize'][1]/np.pi))
                         cv2.circle(self.images['Particles'],(np.int32(r2+5),np.int32(r2+5)),np.int32(r1),(255,0,0),-1)
                         cv2.circle(self.images['Particles'],(np.int32(3*r2+10),np.int32(r2+5)),np.int32(r2),(255,0,0),-1)
                     self.sb.SetStatusText("%d particles"%contcount, 0)
@@ -835,7 +841,7 @@ class MyFrame(wx.Frame):
             blur=rt.mxContr(image.copy())*mask+255*(1-mask)
             blur=cv2.GaussianBlur(blur,(self.parameters['blur'],self.parameters['blur']),0)
             self.images['Blur']=blur.copy()
-            thresh=rt.mxContr((blur<self.parameters['thresh']).astype(int))
+            thresh=rt.mxContr((blur<self.parameters['threshold']).astype(int))
             if self.invCheck.GetValue(): thresh=255-thresh
             if self.parameters['struct']>0:
                 thresh=cv2.morphologyEx(thresh, cv2.MORPH_OPEN, self.kernel)
@@ -844,7 +850,7 @@ class MyFrame(wx.Frame):
             self.images['Clusters']=self.images['Original'].copy()
             self.images['Voronoi']=self.images['Original'].copy()
             if self.imType=='Clusters':
-                blobs,contours=rt.extract_blobs(thresh, -1, self.parameters['size'], -1, diskfit=False,returnCont=True, outpSpac=1)
+                blobs,contours=rt.extract_blobs(thresh, -1, self.parameters['blobsize'], -1, diskfit=False,returnCont=True, outpSpac=1)
                 count = 0
                 contcount=blobs.shape[0]
                 if self.clustNumCheck.GetValue() and contcount>0:
@@ -857,12 +863,12 @@ class MyFrame(wx.Frame):
                 contcount=blobs.shape[0]
                 self.sb.SetStatusText("%d clusters"%contcount, 0)
                 if self.sizeCheck.GetValue():
-                    r1=np.ceil(np.sqrt(self.parameters['size'][0]/np.pi))
-                    r2=np.ceil(np.sqrt(self.parameters['size'][1]/np.pi))
+                    r1=np.ceil(np.sqrt(self.parameters['blobsize'][0]/np.pi))
+                    r2=np.ceil(np.sqrt(self.parameters['blobsize'][1]/np.pi))
                     cv2.circle(self.images['Clusters'],(np.int32(r2+5),np.int32(r2+5)),np.int32(r1),(255,0,0),-1)
                     cv2.circle(self.images['Clusters'],(np.int32(3*r2+10),np.int32(r2+5)),np.int32(r2),(255,0,0),-1)
             if self.imType=='Voronoi' and rt.vorflag:
-                blobs=rt.extract_blobs(thresh, -1, self.parameters['size'], -1, diskfit=False,returnCont=False, outpSpac=1)
+                blobs=rt.extract_blobs(thresh, -1, self.parameters['blobsize'], -1, diskfit=False,returnCont=False, outpSpac=1)
                 if blobs.shape[0]>1:
                     vor=rt.Voronoi(blobs[:,3:5])
                     outind=[-1]
@@ -901,14 +907,14 @@ class MyFrame(wx.Frame):
                     image=image[:,:,self.parameters['channel']]
                 print image.shape, len(image.shape)
                 self.images['Single channel'] = image.copy()
-                thresh=rt.mxContr((self.images['Single channel']<self.parameters['thresh']).astype(int))
+                thresh=rt.mxContr((self.images['Single channel']<self.parameters['threshold']).astype(int))
                 if self.parameters['struct']>0:
                     thresh=cv2.morphologyEx(thresh, cv2.MORPH_OPEN, self.kernel)
                 if self.invCheck.GetValue(): thresh=255-thresh
                 self.images['Threshold']=thresh.copy()
                 self.images['Particles']=self.images['Original'].copy()
                 if self.imType=='Particles':
-		    if np.amin(thresh)!=np.amax(thresh): blobs,contours=rt.extract_blobs(thresh, -1, self.parameters['size'], self.parameters['sphericity'], diskfit=True,returnCont=True, outpSpac=1)
+		    if np.amin(thresh)!=np.amax(thresh): blobs,contours=rt.extract_blobs(thresh, -1, self.parameters['blobsize'], self.parameters['sphericity'], diskfit=True,returnCont=True, outpSpac=1)
 		    else: blobs,contours=np.array([]).reshape(0,8),[]
                     for b in range(len(blobs)):
                         if blobs[b][-2]==0:
@@ -923,8 +929,8 @@ class MyFrame(wx.Frame):
                                 cv2.drawContours(self.images['Particles'],[contours[b]],-1,(0,255,120),2)
                     contcount=blobs.shape[0]
                     if self.sizeCheck.GetValue():
-                        r1=np.ceil(np.sqrt(self.parameters['size'][0]/np.pi))
-                        r2=np.ceil(np.sqrt(self.parameters['size'][1]/np.pi))
+                        r1=np.ceil(np.sqrt(self.parameters['blobsize'][0]/np.pi))
+                        r2=np.ceil(np.sqrt(self.parameters['blobsize'][1]/np.pi))
                         cv2.circle(self.images['Particles'],(np.int32(r2+5),np.int32(r2+5)),np.int32(r1),(255,0,0),-1)
                         cv2.circle(self.images['Particles'],(np.int32(3*r2+10),np.int32(r2+5)),np.int32(r2),(255,0,0),-1)
                     self.sb.SetStatusText("%d particles"%contcount, 0)
@@ -943,7 +949,7 @@ class MyFrame(wx.Frame):
         evID=event.GetId()
         if evID==200: #binary threshold
             thresh=int(self.threshContr.GetValue())
-            if 0<=thresh<=255: self.parameters['thresh']=thresh
+            if 0<=thresh<=255: self.parameters['threshold']=thresh
         if evID==201: #structuring element size
             self.parameters['struct']=int(self.strContr.GetValue())
             if self.parameters['struct']>0: self.kernel= cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(self.parameters['struct'],self.parameters['struct']))
@@ -955,7 +961,7 @@ class MyFrame(wx.Frame):
         if evID==205: self.framenum=int(self.frameContr.GetValue()) #text field
         if evID==206:
             s=self.psizeContr.GetValue() #text field
-            self.parameters['size']=(int(s.split(',')[0]),int(s.split(',')[1]))
+            self.parameters['blobsize']=(int(s.split(',')[0]),int(s.split(',')[1]))
         if evID==207: self.parameters['channel']=int(self.channelCB.GetValue())
         if evID==208: self.parameters['sphericity']=float(self.sphericityContr.GetValue())
         if evID==209:
@@ -978,7 +984,7 @@ class MyFrame(wx.Frame):
         self.frameSpacContr.SetValue(str(self.parameters['spacing']))
         self.frameSldr.SetValue(self.framenum)
         self.strContr.SetValue(str(self.parameters['struct']))
-        self.threshContr.SetValue(str(self.parameters['thresh']))
+        self.threshContr.SetValue(str(self.parameters['threshold']))
         self.sphericityContr.SetValue(str(self.parameters['sphericity']))
         self.blurContr.SetValue(str(self.parameters['blur']))
         if self.movie.typ=="3D stack": self.stCropContr.SetValue(str(self.movie.crop)[1:-1])
@@ -1009,9 +1015,9 @@ class MyFrame(wx.Frame):
             text=text.split('\n')
             for t in text:
                 t=t.split(': ')
-                if t[0].strip() in ['struct','thresh','frames', 'channel','blur','spacing']:#integer parameters
+                if t[0].strip() in ['struct','threshold','frames', 'channel','blur','spacing']:#integer parameters
                     self.parameters[t[0]]=int(t[1])
-                if t[0].strip() in ['size','imsize', 'crop']:#tuple parameters
+                if t[0].strip() in ['blobsize','imsize', 'crop']:#tuple parameters
                     tsplit=t[1][1:-1].split(',')
                     self.parameters[t[0]]=tuple([int(it) for it in tsplit])
                 if t[0].strip() in ['framerate','sphericity']:#float parameters
@@ -1023,8 +1029,8 @@ class MyFrame(wx.Frame):
             self.strContr.SetValue(str(self.parameters['struct']))
             if self.parameters['struct']>0: self.kernel= cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(self.parameters['struct'],self.parameters['struct']))
             else: self.kernel=False
-            self.threshContr.SetValue(str(self.parameters['thresh']))
-            self.psizeContr.SetValue(str(self.parameters['size']).replace(' ','')[1:-1])
+            self.threshContr.SetValue(str(self.parameters['threshold']))
+            self.psizeContr.SetValue(str(self.parameters['blobsize']).replace(' ','')[1:-1])
             self.sphericityContr.SetValue("%.2f"%self.parameters['sphericity'])
             self.blurContr.SetValue("%d"%self.parameters['blur'])
             self.frameSpacContr.SetValue("%d"%self.parameters['spacing'])
@@ -1044,15 +1050,15 @@ class MyFrame(wx.Frame):
         self.sb.SetStatusText("Working... Running coordinate analysis",1)
         try:
             lim=self.frameMinMaxContr.GetValue()
-            framelim=(int(lim.split(',')[0]),int(lim.split(',')[1]))
+            self.parameters['framelim']=(int(lim.split(',')[0]),int(lim.split(',')[1]))
         except:
-            framelim=(0,self.parameters['frames'])
+            pass
         if self.maskCheck.GetValue(): 
 	  try: mask=self.movie.datadir+'mask.png'
 	  except: mask=False
         else: mask=False
         self.parameters['channel']=int(self.channelCB.GetValue())
-        self.movie.extractCoords(framelim=framelim, blobsize=self.parameters['size'], threshold=self.parameters['thresh'],kernel=self.kernel, delete=True, mask=mask,channel=self.parameters['channel'], sphericity=self.parameters['sphericity'],diskfit=self.diskfitCheck.GetValue(), crop=self.parameters['crop'], invert=self.invCheck.GetValue())
+        self.movie.extractCoords(framelim=self.parameters['framelim'], blobsize=self.parameters['blobsize'], threshold=self.parameters['threshold'],kernel=self.kernel, delete=True, mask=mask,channel=self.parameters['channel'], sphericity=self.parameters['sphericity'],diskfit=self.diskfitCheck.GetValue(), crop=self.parameters['crop'], invert=self.invCheck.GetValue())
         self.sb.SetStatusText(self.moviefile, 1)
         self.getCoordB.Enable()
 
@@ -1062,13 +1068,13 @@ class MyFrame(wx.Frame):
         self.sb.SetStatusText("Working... Running coordinate analysis",1)
         try:
             lim=self.frameMinMaxContr.GetValue()
-            framelim=(int(lim.split(',')[0]),int(lim.split(',')[1]))
+            self.parameters['framelim']=(int(lim.split(',')[0]),int(lim.split(',')[1]))
         except:
-            framelim=(0,self.parameters['frames'])
+            pass
         if self.maskCheck.GetValue(): mask=self.movie.datadir+'mask.png'
         else: mask=False
         self.parameters['channel']=int(self.channelCB.GetValue())
-        self.movie.getClusters(thresh=self.parameters['thresh'],gkern=self.parameters['blur'],clsize=self.parameters['size'],channel=self.parameters['channel'],rng=framelim,spacing=self.parameters['spacing'], maskfile=self.movie.datadir+'mask.png')
+        self.movie.getClusters(thresh=self.parameters['threshold'],gkern=self.parameters['blur'],clsize=self.parameters['blobsize'],channel=self.parameters['channel'],rng=self.parameters['framelim'],spacing=self.parameters['spacing'], maskfile=self.movie.datadir+'mask.png')
         self.sb.SetStatusText(self.moviefile, 1)
         self.getCluB.Enable()
         
@@ -1093,13 +1099,13 @@ class MyFrame(wx.Frame):
         self.sb.SetStatusText("Working... Running trajectory analysis",1)
         try:
             lim=self.frameMinMaxContr.GetValue()
-            framelim=(int(lim.split(',')[0]),int(lim.split(',')[1]))
+            self.parameters['framelim']=(int(lim.split(',')[0]),int(lim.split(',')[1]))
         except:
-            framelim=(0,self.parameters['frames'])
+            pass
         if self.maskCheck.GetValue(): mask=self.movie.datadir+'mask.png'
         else: mask=False
         self.parameters['channel']=int(self.channelCB.GetValue())
-        self.movie.findTrajectories(framelim=framelim, blobsize=self.parameters['size'], threshold=self.parameters['thresh'],kernel=self.kernel, delete=True, invert=self.invCheck.GetValue(), mask=mask,channel=self.parameters['channel'], sphericity=self.parameters['sphericity'],diskfit=self.diskfitCheck.GetValue())
+        self.movie.findTrajectories(framelim=self.parameters['framelim'], blobsize=self.parameters['blobsize'], threshold=self.parameters['threshold'],kernel=self.kernel, delete=True, invert=self.invCheck.GetValue(), mask=mask,channel=self.parameters['channel'], sphericity=self.parameters['sphericity'],diskfit=self.diskfitCheck.GetValue())
         self.sb.SetStatusText(self.moviefile, 1)
         self.getTrajB.Enable()
 

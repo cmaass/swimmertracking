@@ -18,6 +18,7 @@ import re
 import subprocess
 import MySQLdb as mdb
 import types
+import cPickle
 try:
     from scipy.spatial import Voronoi
     from scipy.spatial.qhull import QhullError
@@ -124,50 +125,57 @@ class movie():
         if bg!='':
             if type(bg).__name__=='ndarray':
                 self.bg=bg
-                self.shape=bg.shape[:2]
+                shape=bg.shape[:2]
             if type(bg).__name__=='str':
                 try:
                     im=np.array(Image.open(bg))
-                    self.shape=im.shape[:2]
+                    shape=im.shape[:2]
                     if len(im.shape)==3: im=im[:,:,0]
                     self.bg=im
                 except: pass
         self.TTAB=TTAB
-        if os.name=='posix': #this assumes you installed mplayer!
+        if os.name=='posix': #this assumes you installed mplayer! We're also quite possibly doing the mplayer output multiple times. Better safe than sorry. TODO cleanup
             result = subprocess.check_output(['mplayer','-vo','null','-ao','null','-identify','-frames','0',self.fname])
         if os.name=='nt': #this assumes you installed mplayer and have the folder in your PATH!
             result = subprocess.check_output(['mplayer.exe','-vo','null','-ao', 'null','-identify','-frames','0',self.fname])
         try:
-            self.shape=(int(re.search('(?<=ID_VIDEO_WIDTH=)[0-9]+',result).group()),int(re.search('(?<=ID_VIDEO_HEIGHT=)[0-9]+',result).group()))
-            self.framerate=np.float(re.search('(?<=ID_VIDEO_FPS=)[0-9.]+',result).group())
-            self.frames=int(np.round(np.float(re.search('(?<=ID_LENGTH=)[0-9.]+',result).group())*self.framerate))
-            self.framelim=(0,self.frames)
+            shape=(int(re.search('(?<=ID_VIDEO_WIDTH=)[0-9]+',result).group()),int(re.search('(?<=ID_VIDEO_HEIGHT=)[0-9]+',result).group()))
+            framerate=np.float(re.search('(?<=ID_VIDEO_FPS=)[0-9.]+',result).group())
+            frames=int(np.round(np.float(re.search('(?<=ID_LENGTH=)[0-9.]+',result).group())*framerate))
+            framelim=(0,frames)
         except:
-            self.shape=(0,0)
-            self.framerate=0.
-            self.frames=0.
-            self.framelim=(0,1e8)
-        self.kernel=False
-        self.threshold=128
-        self.blobsize=(30,80)
+            shape=(0,0)
+            framerate=0.
+            frames=0.
+            framelim=(0,1e8)
+        self.parameters={
+            'framerate':framerate, 'sphericity':-1.,#float
+            'imsize':shape,'blobsize':(0,30),'crop':[0,0,self.shape[0],self.shape[1]], 'framelim':framelim, #tuples
+            'channel':0, 'blur':1, 'spacing':1, 'struct':1, 'threshold':128, 'frames':frames,#ints
+            'sizepreview':True, 'invert':False, 'diskfit':False, 'mask':True #bools
+        }
 
-        self.paras={}
 
     def readParas(self):
-        self.paras={}
+        self.parameters={}
         with open(self.datadir+'paras.txt') as f:
-            for line in f:
-                self.paras[line.split(':')[0].strip()]=line.split(':')[1].strip()
-                try:
-                    k=int(self.paras['struct'])
-                    self.kernel=cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(k,k))
-                except: self.kernel=cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(1,1))
-                try: self.threshold=self.paras['thresh']
-                except: self.threshold=128
-                try:
-                    exec('self.blobsize=%s')%self.paras['size']
-                except: self.blobsize=(30,80)
-
+            with open(filename,'r') as f: text=f.read()
+            text=text.split('\n')
+            for t in text:
+                t=t.split(': ')
+                if t[0].strip() in ['struct','thresh','frames', 'channel','blur','spacing']:#integer parameters
+                    self.parameters[t[0]]=int(t[1])
+                if t[0].strip() in ['size','imsize', 'crop']:#tuple parameters
+                    tsplit=t[1][1:-1].split(',')
+                    self.parameters[t[0]]=tuple([int(it) for it in tsplit])
+                if t[0].strip() in ['framerate','sphericity']:#float parameters
+                    self.parameters[t[0]]=float(t[1])
+                if t[0].strip() in ['sizepreview','mask','diskfit','invert']:#boolean parameters
+                    self.parameters[t[0]]=str_to_bool(t[1])
+                if self.parameters['struct']>1: self.kernel= cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(self.parameters['struct'],self.parameters['struct']))
+                else: self.kernel=False
+                
+                
     def sqlCoords(self,dbname,csvfile):
         """Connects to a SQL database and dumps the particle coordinate data into a table. Logs on as """
         db = mdb.connect(host="localhost", user="cmaass",passwd="swimmers", local_infile=True)
@@ -185,10 +193,11 @@ class movie():
             raise
         cur.close()
         db.close()
+        
     def extractCoords(self,framelim=False, blobsize=False, threshold=False, kernel=False, delete=False, mask=False, channel=0, sphericity=-1, diskfit=True, blur=1,crop=False):
-        if not framelim: framelim=self.framelim
-        if not blobsize: blobsize=self.blobsize
-        if not threshold: threshold=self.threshold
+        if not framelim: framelim=self.parameters['framelim']
+        if not blobsize: blobsize=self.parameters['blobsize']
+        if not threshold: threshold=self.parameters['threshold']
         if type(kernel).__name__!='ndarray': kernel=np.array([1]).astype(np.uint8)
         if type(mask).__name__=='str':
             try:
@@ -409,9 +418,9 @@ class movie():
             print "closed trajectory: ",tr.number, np.sqrt(tr.maxdist)
 
     def findTrajectories(self,framelim=False, blobsize=False,lenlim=50, threshold=False, kernel=False, delete=False, invert=False, mask=False, channel=0, sphericity=-1., outpSpac=200, diskfit=True):
-        if not framelim: framelim=self.framelim
-        if not blobsize: blobsize=self.blobsize
-        if not threshold: threshold=self.threshold
+        if not framelim: framelim=self.parameters['framelim']
+        if not blobsize: blobsize=self.parameters['blobsize']
+        if not threshold: threshold=self.parameters['threshold']
         if type(kernel).__name__!='ndarray': kernel=np.array([1]).astype(np.uint8)
         if type(mask).__name__=='str':
             try:
@@ -645,8 +654,10 @@ class movie():
         bgsub=image.astype(float)-self.bg
         bgsub=mxContr(bgsub)*mask
         Image.fromarray(bgsub.astype(np.uint8)).save(self.datadir+'bgsub.png')
-        thresh=mxContr((bgsub<self.threshold).astype(int))
-        thresh=cv2.morphologyEx(thresh, cv2.MORPH_OPEN, self.kernel)
+        thresh=mxContr((bgsub<self.parameters['threshold']).astype(int))
+        if self.parameters['struct']>0: 
+            self.kernel= cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(self.parameters['struct'],self.parameters['struct']))
+            thresh=cv2.morphologyEx(thresh, cv2.MORPH_OPEN, self.kernel)
         thresh=thresh*mask
         Image.fromarray(thresh.astype(np.uint8)).save(self.datadir+'thresh.png')
         contours, hierarchy=cv2.findContours(thresh.copy(),cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
@@ -655,7 +666,7 @@ class movie():
         for i in range(len(contours)):
             M=cv2.moments(contours[i])
             area= M['m00']
-            if self.blobsize[0]< area < self.blobsize[1]:
+            if self.parameters['blobsize'][0]< area < self.parameters['blobsize'][1]:
                 cont+=[contours[i]]
                 cv2.fillPoly(particles,cont,color=(255,120,0))
         Image.fromarray(particles.astype(np.uint8)).save(self.datadir+'particles.png')
@@ -668,7 +679,7 @@ class movie():
         if self.trajectories!={}:
             if not trajectory:
                 alldata=np.vstack([tr.data[tspacing/2::tspacing,:] for tr in self.trajectories.values()])
-                bins=(np.arange(self.frames/tspacing+1)*tspacing,np.arange(self.shape[0]/rspacing+1)*rspacing,np.arange(self.shape[1]/rspacing+1)*rspacing)
+                bins=(np.arange(self.parameters['frames']/tspacing+1)*tspacing,np.arange(self.parameters['imsize'][0]/rspacing+1)*rspacing,np.arange(self.parameters['imsize'][1]/rspacing+1)*rspacing)
                 try:
                     hist=np.histogramdd(alldata, bins)[0]
                     tcorr=[]
@@ -687,7 +698,7 @@ class movie():
             else:
                 alldata=np.vstack([tr.data[tspacing/2::tspacing,:] for tr in self.trajectories.values() if tr.number != trajectory])#time subset corresponding to trajectory length
                 thistrajectory=self.trajectories[trajectory]
-                bins=(np.arange(self.frames/tspacing+1)*tspacing,np.arange(self.shape[0]/rspacing+1)*rspacing,np.arange(self.shape[1]/rspacing+1)*rspacing)
+                bins=(np.arange(self.parameters['frames']/tspacing+1)*tspacing,np.arange(self.parameters['imsize'][0]/rspacing+1)*rspacing,np.arange(self.parameters['imsize'][1]/rspacing+1)*rspacing)
                 try:
                     hist=np.histogramdd(alldata, bins)[0]
                     tcorr=[]
@@ -819,20 +830,21 @@ class imStack(movie):
         self.datadir=test0+'-data'+sep
         try:
             im=cv2.imread(self.stack[0],1)
-            self.shape=im.shape[:2]
-            self.framerate=-1
-            self.frames=len(self.stack)
-            self.framelim=(0,self.frames)
+            shape=im.shape[:2]
+            framerate=-1
+            frames=len(self.stack)
+            framelim=(0,frames)
         except:
-            self.shape=(0,0)
-            self.framerate=0.
-            self.frames=0.
-            self.framelim=(0,1e8)
-        self.kernel=False
-        self.threshold=128
-        self.blobsize=(30,80)
-        self.crop=[0,0,self.shape[0],self.shape[1]]
-        self.paras={}
+            shape=(0,0)
+            framerate=0.
+            frames=0.
+            framelim=(0,1e8)
+        self.parameters={            
+            'framerate':framerate, 'sphericity':-1.,#floats
+            'struct':1,'threshold':128, 'frames':frames, 'channel':0, 'blur':1,'spacing':1 #ints
+            'blobsize':(0,30),'imsize':shape,'crop':[0,0,self.shape[0],self.shape[1]], 'framelim':framelim,#tuples
+            'sizepreview':True, 'invert':False, 'diskfit':False, 'mask':True           
+            }
 
     def getFrame(self,framenum):
         """Retrieves frame of number framenum from opened stack. Returns numpy array image, or False if unsuccessful."""
@@ -842,12 +854,13 @@ class imStack(movie):
         except:
             return False
 	  
-    def extractCoords(self,framelim=False, blobsize=False, threshold=False, kernel=False, delete=False, mask=False, channel=0, sphericity=-1, diskfit=True, blur=1,invert=False,crop=False): #fix the argument list! it's a total disgrace...
+    def extractCoords(self,framelim=False, blobsize=False, threshold=False, kernel=False, delete=False, mask=False, channel=0, sphericity=-1, diskfit=True, blur=1,invert=True,crop=False, contours=False): #fix the argument list! it's a total disgrace...
 	tInit=time()
-        if not framelim: framelim=self.framelim
-        if not blobsize: blobsize=self.blobsize
-        if not threshold: threshold=self.threshold
-        if not crop: crop=self.crop
+	contdict={}
+        if not framelim: framelim=self.parameters['framelim']
+        if not blobsize: blobsize=self.parameters['blobsize']
+        if not threshold: threshold=self.parameters['threshold']
+        if not crop: crop=self.parameters['crop']
         if type(kernel).__name__!='ndarray': kernel=np.array([1]).astype(np.uint8)
         if not exists(self.datadir):
             os.mkdir(self.datadir)
@@ -873,17 +886,23 @@ class imStack(movie):
                 thresh=mxContr((image<threshold).astype(int))
                 if type(kernel).__name__=='ndarray': thresh=cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
                 if invert: thresh=255-thresh
-                if np.amin(thresh)!=np.amax(thresh): blobs=extract_blobs(thresh,i,sphericity=sphericity,blobsize=blobsize,diskfit=diskfit)
-                else: blobs=np.array([]).reshape(0,8)
+                if np.amin(thresh)!=np.amax(thresh): 
+                    if contours: blobs,conts=extract_blobs(thresh,i,sphericity=sphericity,blobsize=blobsize,diskfit=diskfit, returnCont=True)
+                    else: blobs,conts=extract_blobs(thresh,i,sphericity=sphericity,blobsize=blobsize,diskfit=diskfit, returnCont=False),[]
+                else: blobs,conts=np.array([]).reshape(0,8),[]
                 counter=blobs.shape[0]
                 try: allblobs=np.vstack((allblobs,blobs))
                 except ValueError:
                     pass
                     #print "Value Error!", allblobs.shape, blobs.shape
+                for i in range(len(conts)): contdict["%d-%d"%(blobs[0,0],i)]=conts[i]
         np.savetxt(dumpfile,allblobs,fmt="%.2f")
         dumpfile.close()
         with open(self.datadir+'coords.txt','r') as f: tempdata=f.read()[:-1]
         with open(self.datadir+'coords.txt','w') as f: f.write(tempdata)
+        if len(contdict)>0: 
+            with open(self.datadir+'contours.pkl','wb') as f: 
+                cPickle.dump(contdict,f,cPickle.HIGHEST_PROTOCOL)
 
 
 def extract_blobs(bwImg, framenum, blobsize=(0,1e5), sphericity=-1, diskfit=True, outpSpac=200,returnCont=False, spherthresh=1e5):
@@ -1064,4 +1083,4 @@ def str_to_bool(s):
     elif s == 'False':
         return False
     else:
-        raise ValueError("Cannot covert {} to bool".format(s))
+        raise ValueError("Cannot convert {} to bool".format(s))
