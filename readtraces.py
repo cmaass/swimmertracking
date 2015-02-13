@@ -59,7 +59,7 @@ class trajectory():
         Extends data attribute array with new coordinates if successful, closes trajectory if not.
         Returns next neighbour numpy array with matching particle removed for speedup and to avoid double counting."""
         if nxt.size>0:
-            dist=(self.data[-1,1]-nxt[:,0+idx])**2+(self.data[-1,2]-nxt[:,1+idx])**2
+            dist=(self.data[-1,2]-nxt[:,0+idx])**2+(self.data[-1,3]-nxt[:,1+idx])**2
             m=min(dist)
         else:
             m=self.maxdist+1 #this will lead to trajectory closure
@@ -67,7 +67,7 @@ class trajectory():
         if m<self.maxdist:
             ind=(dist==m).nonzero()[0]
             try:
-                self.data=np.vstack((self.data,np.array([[frame,nxt[ind,idx],nxt[ind,idx+1], nxt[ind,idx-1]]]))) #append new coordinates to trajectory
+                self.data=np.vstack((self.data,np.array([[frame,ind, nxt[ind,idx],nxt[ind,idx+1], nxt[ind,idx-1]]]))) #append new coordinates to trajectory
 
             except IndexError:
                 print "SOMETHING WRONG HERE!", self.data.shape, nxt.shape, frame, self.number #not sure what.
@@ -75,9 +75,9 @@ class trajectory():
                 if self.lossCnt>lossmargin:
                     self.opened=False #close trajectory, don't remove particle from coordinate array.
                 else:
-                    predCoord=lin_traj(self.data[-lossmargin:,1],self.data[-lossmargin:,2])
+                    predCoord=lin_traj(self.data[-lossmargin:,2],self.data[-lossmargin:,3])
                     if np.isnan(predCoord[0]): predCoord=self.data[-1][:-1]
-                    self.data=np.vstack((self.data,np.array([[frame, predCoord[0], predCoord[1], self.data[-1,-1]]])))
+                    self.data=np.vstack((self.data,np.array([[frame, -1, predCoord[0], predCoord[1], self.data[-1,-1]]])))
                 return nxt
             self.lossCnt=0
             return np.delete(nxt,ind,0) #remove particle and return coordinate set.
@@ -86,9 +86,9 @@ class trajectory():
             if self.lossCnt>lossmargin:
                 self.opened=False #close trajectory, don't remove particle from coordinate array.
             else:
-                predCoord=lin_traj(self.data[-lossmargin:,1],self.data[-lossmargin:,2])
+                predCoord=lin_traj(self.data[-lossmargin:,2],self.data[-lossmargin:,3])
                 if np.isnan(predCoord[0]): predCoord=self.data[-1][:-1]
-                self.data=np.vstack((self.data,np.array([[frame, predCoord[0], predCoord[1],self.data[-1,-1]]])))
+                self.data=np.vstack((self.data,np.array([[frame, -1,predCoord[0], predCoord[1],self.data[-1,-1]]])))
             return nxt
 
 
@@ -150,7 +150,7 @@ class movie():
             framelim=(0,1e8)
         self.parameters={
             'framerate':framerate, 'sphericity':-1.,#float
-            'imsize':shape,'blobsize':(0,30),'crop':[0,0,self.shape[0],self.shape[1]], 'framelim':framelim, #tuples
+            'imsize':shape,'blobsize':(0,30),'crop':[0,0,shape[0],shape[1]], 'framelim':framelim, #tuples
             'channel':0, 'blur':1, 'spacing':1, 'struct':1, 'threshold':128, 'frames':frames,#ints
             'sizepreview':True, 'invert':False, 'diskfit':False, 'mask':True #bools
         }
@@ -159,21 +159,21 @@ class movie():
     def readParas(self):
         self.parameters={}
         with open(self.datadir+'paras.txt') as f:
-            with open(filename,'r') as f: text=f.read()
-            text=text.split('\n')
-            for t in text:
-                t=t.split(': ')
-                if t[0].strip() in ['struct','thresh','frames', 'channel','blur','spacing']:#integer parameters
-                    self.parameters[t[0]]=int(t[1])
-                if t[0].strip() in ['size','imsize', 'crop']:#tuple parameters
-                    tsplit=t[1][1:-1].split(',')
-                    self.parameters[t[0]]=tuple([int(it) for it in tsplit])
-                if t[0].strip() in ['framerate','sphericity']:#float parameters
-                    self.parameters[t[0]]=float(t[1])
-                if t[0].strip() in ['sizepreview','mask','diskfit','invert']:#boolean parameters
-                    self.parameters[t[0]]=str_to_bool(t[1])
-                if self.parameters['struct']>1: self.kernel= cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(self.parameters['struct'],self.parameters['struct']))
-                else: self.kernel=False
+            text=f.read()
+        text=text.split('\n')
+        for t in text:
+          t=t.split(': ')
+          if t[0].strip() in ['struct','threshold','frames', 'channel','blur','spacing']:#integer parameters
+            self.parameters[t[0]]=int(t[1])
+          if t[0].strip() in ['blobsize','imsize', 'crop','framelim']:#tuple parameters
+            tsplit=t[1][1:-1].split(',')
+            self.parameters[t[0]]=tuple([int(it) for it in tsplit])
+          if t[0].strip() in ['framerate','sphericity']:#float parameters
+            self.parameters[t[0]]=float(t[1])
+          if t[0].strip() in ['sizepreview','mask','diskfit','invert']:#boolean parameters
+            self.parameters[t[0]]=str_to_bool(t[1])
+        if self.parameters['struct']>1: self.kernel= cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(self.parameters['struct'],self.parameters['struct']))
+        else: self.kernel=False
                 
                 
     def sqlCoords(self,dbname,csvfile):
@@ -380,11 +380,12 @@ class movie():
         mov.release()
         return images
 
-    def CoordtoTraj(self, tempfile='temp',lenlim=12, delete=True, breakind=1e9, maxdist=-1, lossmargin=10):
+    def CoordtoTraj(self, tempfile='temp',lenlim=12, delete=True, breakind=1e9, maxdist=-1, lossmargin=10):#TODO Adjust for frame jumps!!!
         t0=time()
         if delete:
             for f in glob(self.datadir+'trajectory*.txt'): os.remove(f)
-        if tempfile=='temp':tempfile=self.datadir+'temp'
+        if tempfile=='temp':tempfile=self.datadir+'temp' #TODO: 'coords.txt'!!!
+        if tempfile=='coords.txt':tempfile=self.datadir+'coords.txt' 
         dataArr=np.loadtxt(tempfile)
         trajectorycount=0
         frames=sorted(list(set(dataArr[:,0])))
@@ -408,8 +409,8 @@ class movie():
                     del activetrajectories[tr.number]
             for blob in blobs: #if any circles are left in the set, open a new trajectory for each of them
                 trajectorycount+=1
-                if maxdist<0: md=3*blob[2]/np.pi
-                activetrajectories[trajectorycount]=trajectory(np.array([[frames[i],blob[3],blob[4],blob[2]]]),trajectorycount, maxdist=md)
+                if maxdist<0: maxdist=3*blob[2]/np.pi
+                activetrajectories[trajectorycount]=trajectory(np.array([[frames[i],blob[1],blob[3],blob[4],blob[2]]]),trajectorycount, maxdist=maxdist)
                 #activetrajectories[trajectorycount].maxdist=5*np.sqrt(blob[]/np.pi) #initialise maximum allowed nearest neighbour distance = particle diameter
         print "trajectories:", len(activetrajectories)
         for tr in activetrajectories.values():
@@ -549,25 +550,25 @@ class movie():
             cl=color=cm.jet(i/np.float(len(keys)))
             if tr.data.shape[0]>lenlimit and len(tr.data.shape)>1:
                 print tr.number, tr.data.shape
-                pl.plot(tr.data[:,1],tr.data[:,2],lw=.3, color=cl)
-                pl.text(tr.data[0,1], tr.data[0,2], str(tr.number), color=cl,fontsize=6)
+                pl.plot(tr.data[:,2],tr.data[:,3],lw=.3, color=cl)
+                pl.text(tr.data[0,2], tr.data[0,3], str(tr.number), color=cl,fontsize=6)
         pl.axis('off')
         pl.savefig(self.datadir+outname,dpi=600)
         pl.close('all')
 
 
-    def plotTrajectory(self, num):
+    def plotTrajectory(self, num): #note xy-indices changed! Rerun analysis if trajectories look strange!
         self.loadTrajectories()
         traj=self.trajectories[num]
         try: f0=self.getFrames(int(traj.data[-1,0]), 1)
         except: f0=self.getFrames(int(traj.data[-1,0])-1, 1)
         f0=np.dstack((f0,f0,f0))
         print f0.shape
-        cv2.polylines(f0,[traj.data[:,1:3].astype(np.int32)], False, (255,0,0), 2)
+        cv2.polylines(f0,[traj.data[:,2:4].astype(np.int32)], False, (255,0,0), 2)
         Image.fromarray(f0.astype(np.uint8)).save(self.datadir+"trajPlot%06d-frame%06d.jpg"%(num, traj.data[-1,0]))
 
 
-    def stitchTrajectories(self, maxdist, maxtime,timelim=50, save=False):
+    def stitchTrajectories(self, maxdist, maxtime,timelim=50, save=False):#TODO: fix for particle indices!!!
         tInit=time()
         if self.trajectories=={}:
             print "please load trajectories first (self.loadTrajectories())!"
@@ -841,8 +842,8 @@ class imStack(movie):
             framelim=(0,1e8)
         self.parameters={            
             'framerate':framerate, 'sphericity':-1.,#floats
-            'struct':1,'threshold':128, 'frames':frames, 'channel':0, 'blur':1,'spacing':1 #ints
-            'blobsize':(0,30),'imsize':shape,'crop':[0,0,self.shape[0],self.shape[1]], 'framelim':framelim,#tuples
+            'struct':1,'threshold':128, 'frames':frames, 'channel':0, 'blur':1,'spacing':1, #ints
+            'blobsize':(0,30),'imsize':shape,'crop':[0,0,shape[0],shape[1]], 'framelim':framelim,#tuples
             'sizepreview':True, 'invert':False, 'diskfit':False, 'mask':True           
             }
 
@@ -854,12 +855,13 @@ class imStack(movie):
         except:
             return False
 	  
-    def extractCoords(self,framelim=False, blobsize=False, threshold=False, kernel=False, delete=False, mask=False, channel=0, sphericity=-1, diskfit=True, blur=1,invert=True,crop=False, contours=False): #fix the argument list! it's a total disgrace...
+    def extractCoords(self,framelim=False, blobsize=False, threshold=False, kernel=False, delete=True, mask=False, channel=False, sphericity=-1, diskfit=True, blur=1,invert=True,crop=False, contours=False): #fix the argument list! it's a total disgrace...
 	tInit=time()
 	contdict={}
         if not framelim: framelim=self.parameters['framelim']
         if not blobsize: blobsize=self.parameters['blobsize']
         if not threshold: threshold=self.parameters['threshold']
+        if not channel: channel=self.parameters['channel']
         if not crop: crop=self.parameters['crop']
         if type(kernel).__name__!='ndarray': kernel=np.array([1]).astype(np.uint8)
         if not exists(self.datadir):

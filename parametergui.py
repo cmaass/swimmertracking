@@ -31,7 +31,7 @@ from sys import exc_info
 
 
 #this directory definition is changed in the source code at runtime which is probably a really bad idea but good for portability
-moviedir='/media/cmdata/datagoe/gunnar/acrylamide-140210/'#end
+moviedir='/windows/D/datagoe/gunnar/acrylamide-140210/'#end
 
 def GetBitmap(width=1, height=1, colour = (0,0,0) ):
     """Helper funcion to generate a wxBitmap of defined size and colour.
@@ -214,12 +214,12 @@ class MyImage(wx.StaticBitmap):
                 
     def OnRightUp(self,event):
         if self.pparent.movie.typ=="3D stack":
-            oldcrop=self.pparent.movie.crop
+            oldcrop=self.pparent.movie.parameters['crop']
             pt=event.GetPosition()
             pt=self.parent.CalcUnscrolledPosition(pt)
-            self.pparent.movie.crop=[oldcrop[1]+self.savept[1],oldcrop[0]+self.savept[0],oldcrop[1]+pt[1],oldcrop[0]+pt[0]]
-            self.pparent.parameters['crop']=self.pparent.movie.crop
-            self.pparent.stCropContr.SetValue(str(self.pparent.movie.crop)[1:-1])
+            self.pparent.movie.parameters['crop']=[oldcrop[1]+self.savept[1],oldcrop[0]+self.savept[0],oldcrop[1]+pt[1],oldcrop[0]+pt[0]]
+            self.pparent.parameters['crop']=self.pparent.movie.parameters['crop']
+            self.pparent.stCropContr.SetValue(str(self.pparent.movie.parameters['crop'])[1:-1])
             self.pparent.StImgDisplay()
             
 
@@ -624,7 +624,7 @@ class MyFrame(wx.Frame):
             self.frameSldr.SetMax(self.parameters['frames'])
             self.frameSldr.SetValue(0)
             self.frameContr.SetValue('0')
-            self.stCropContr.SetValue(str(self.movie.crop)[1:-1])
+            self.stCropContr.SetValue(str(self.movie.parameters['crop'])[1:-1])
             self.framenum=0
             self.zoomBox.SetValue('100%')
             self.scp.im.scale=1.
@@ -756,8 +756,8 @@ class MyFrame(wx.Frame):
                     im=np.array(Image.open(self.movie.datadir+'mask.png'))
                     if len(im.shape)==3: im=im[:,:,self.parameters['channel']]
                     mask=(im>0).astype(float)
-                except: mask=np.zeros(self.movie.shape[::-1])+1.
-            else: mask=np.zeros(self.movie.shape[::-1])+1.
+                except: mask=np.zeros(self.movie.parameters['imsize'][::-1])+1.
+            else: mask=np.zeros(self.movie.parameters['imsize'][::-1])+1.
             self.images['Mask']=mask.astype(np.uint8)*255
             for item in self.rImstate:
                 if item.GetValue(): self.imType=item.GetLabelText()
@@ -769,7 +769,7 @@ class MyFrame(wx.Frame):
                         self.sb.SetStatusText('Working... Extracting background', 1)
                         s=self.BGrngContr.GetValue() #text field
                         BGrng=(int(s.split(',')[0]),int(s.split(',')[1]))
-                        num=int(1.e8/(self.movie.shape[0]*self.movie.shape[1]))
+                        num=int(1.e8/(self.movie.parameters['imsize'][0]*self.movie.parameters['imsize'][1]))
                         if num<10: num=10
                         if num>50: num=50
                         print num
@@ -826,8 +826,8 @@ class MyFrame(wx.Frame):
                     im=np.array(Image.open(self.movie.datadir+'mask.png'))
                     if len(im.shape)==3: im=im[:,:,self.parameters['channel']]
                     mask=(im>0).astype(float)
-                except: mask=np.zeros(self.movie.shape[::-1])+1.
-            else: mask=np.zeros(self.movie.shape[::-1])+1.
+                except: mask=np.zeros(self.movie.parameters['imsize'][::-1])+1.
+            else: mask=np.zeros(self.movie.parameters['imsize'][::-1])+1.
             self.images['Mask']=mask.astype(np.uint8)*255
             for item in self.cImstate:
                 if item.GetValue(): self.imType=item.GetLabelText()
@@ -899,9 +899,9 @@ class MyFrame(wx.Frame):
             image=self.movie.getFrame(self.framenum)
             #print self.movie.crop
             if type(image).__name__=='ndarray':
-                if image.shape[:2]!=(self.movie.crop[2]-self.movie.crop[0],self.movie.crop[3]-self.movie.crop[1]):
-                    if len(image.shape)==2: image=image[self.movie.crop[0]:self.movie.crop[2],self.movie.crop[1]:self.movie.crop[3]]
-                    if len(image.shape)==3: image=image[self.movie.crop[0]:self.movie.crop[2],self.movie.crop[1]:self.movie.crop[3],:]
+                if image.shape[:2]!=(self.movie.parameters['crop'][2]-self.movie.parameters['crop'][0],self.movie.parameters['crop'][3]-self.movie.parameters['crop'][1]):
+                    if len(image.shape)==2: image=image[self.movie.parameters['crop'][0]:self.movie.parameters['crop'][2],self.movie.parameters['crop'][1]:self.movie.parameters['crop'][3]]
+                    if len(image.shape)==3: image=image[self.movie.parameters['crop'][0]:self.movie.parameters['crop'][2],self.movie.parameters['crop'][1]:self.movie.parameters['crop'][3],:]
                     self.images['Original']=image.copy()
                 if len(image.shape)>2:
                     image=image[:,:,self.parameters['channel']]
@@ -977,8 +977,8 @@ class MyFrame(wx.Frame):
         if evID==651:
             if self.movie.typ=="3D stack":
                 try: 
-		  self.movie.crop=[int(i) for i in self.stCropContr.GetValue().split(',')]
-		  self.parameters['crop']=self.movie.crop
+		  self.movie.parameters['crop']=[int(i) for i in self.stCropContr.GetValue().split(',')]
+		  self.parameters['crop']=self.movie.parameters['crop']
                 except: raise
         self.frameContr.SetValue(str(self.framenum))
         self.frameSpacContr.SetValue(str(self.parameters['spacing']))
@@ -987,7 +987,7 @@ class MyFrame(wx.Frame):
         self.threshContr.SetValue(str(self.parameters['threshold']))
         self.sphericityContr.SetValue(str(self.parameters['sphericity']))
         self.blurContr.SetValue(str(self.parameters['blur']))
-        if self.movie.typ=="3D stack": self.stCropContr.SetValue(str(self.movie.crop)[1:-1])
+        if self.movie.typ=="3D stack": self.stCropContr.SetValue(str(self.movie.parameters['crop'])[1:-1])
         self.images['Original']=self.movie.getFrame(self.framenum)
         try: self.infoWin.Update()
         except AttributeError:
@@ -1017,7 +1017,7 @@ class MyFrame(wx.Frame):
                 t=t.split(': ')
                 if t[0].strip() in ['struct','threshold','frames', 'channel','blur','spacing']:#integer parameters
                     self.parameters[t[0]]=int(t[1])
-                if t[0].strip() in ['blobsize','imsize', 'crop']:#tuple parameters
+                if t[0].strip() in ['blobsize','imsize', 'crop', 'framelim']:#tuple parameters
                     tsplit=t[1][1:-1].split(',')
                     self.parameters[t[0]]=tuple([int(it) for it in tsplit])
                 if t[0].strip() in ['framerate','sphericity']:#float parameters
@@ -1120,9 +1120,9 @@ class MyFrame(wx.Frame):
         
     def ResetCrop(self,event):
         if self.movie.typ=='3D stack':
-            self.movie.crop=[0,0,self.movie.shape[0],self.movie.shape[1]]
-            self.parameters['crop']=self.movie.crop
-            self.stCropContr.SetValue(str(self.movie.crop)[1:-1])
+            self.movie.parameters['crop']=[0,0,self.movie.parameters['imsize'][0],self.movie.parameters['imsize'][1]]
+            self.parameters['crop']=self.movie.parameters['crop']
+            self.stCropContr.SetValue(str(self.movie.parameters['crop'])[1:-1])
             self.StImgDisplay()
             
     def PlotStack(self,event):
