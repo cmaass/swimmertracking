@@ -31,7 +31,7 @@ from sys import exc_info
 
 
 #this directory definition is changed in the source code at runtime which is probably a really bad idea but good for portability
-moviedir='/windows/D/datagoe/gunnar/acrylamide-140210/'#end
+moviedir='/media/cmdata/datagoe/gunnar/acrylamide-140211/'#end
 
 def GetBitmap(width=1, height=1, colour = (0,0,0) ):
     """Helper funcion to generate a wxBitmap of defined size and colour.

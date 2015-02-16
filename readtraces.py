@@ -58,6 +58,10 @@ class trajectory():
         Accepts next neighbour numpy array (2 x # particles, xy columns).
         Extends data attribute array with new coordinates if successful, closes trajectory if not.
         Returns next neighbour numpy array with matching particle removed for speedup and to avoid double counting."""
+        if frame-self.data[-1,0]>lossmargin+1: #if there are frame continuity gaps bigger than the loss tolerance, close trajectory!
+            self.opened=False
+            return nxt
+        
         if nxt.size>0:
             dist=(self.data[-1,2]-nxt[:,0+idx])**2+(self.data[-1,3]-nxt[:,1+idx])**2
             m=min(dist)
@@ -157,7 +161,7 @@ class movie():
 
 
     def readParas(self):
-        self.parameters={}
+        #self.parameters={}
         with open(self.datadir+'paras.txt') as f:
             text=f.read()
         text=text.split('\n')
@@ -221,6 +225,7 @@ class movie():
         except OSError: pass
         dumpfile=open(self.datadir+'temp','a')
         allblobs=np.array([]).reshape(0,8)
+        dumpfile.write('#frame particle# blobsize x y split_blob? [reserved] sphericity\n')
         counter=0
         while success and framenum<framelim[1]: #loop through frames
             framenum+=1
@@ -246,7 +251,7 @@ class movie():
                 except ValueError:
                     pass
                     #print "Value Error!", allblobs.shape, blobs.shape
-        np.savetxt(dumpfile,allblobs,fmt="%.2f")
+                    np.savetxt(dumpfile,allblobs,fmt="%.2f")
         dumpfile.close()
         with open(self.datadir+'temp','r') as f: tempdata=f.read()[:-1]
         with open(self.datadir+'temp','w') as f: f.write(tempdata)
@@ -404,7 +409,7 @@ class movie():
                 blobs=tr.findNeighbour(blobs, frames[i], idx=3, lossmargin=lossmargin) #for each open trajectory, find corresponding particle in circle set
                 if not tr.opened: #if a trajectory is closed in the process (no nearest neighbour found), move to closed trajectories.
                     if tr.data.shape[0]>lenlim:
-                        np.savetxt(self.datadir+'trajectory%06d.txt'%tr.number, tr.data, fmt='%.2f')
+                        np.savetxt(self.datadir+'trajectory%06d.txt'%tr.number, tr.data, fmt='%.2f', header="frame particle# x y area")
                         print "closed trajectory: ", tr.number, tr.maxdist
                     del activetrajectories[tr.number]
             for blob in blobs: #if any circles are left in the set, open a new trajectory for each of them
@@ -415,7 +420,7 @@ class movie():
         print "trajectories:", len(activetrajectories)
         for tr in activetrajectories.values():
             #if tr.data.shape[0]>lenlim:
-            np.savetxt(self.datadir+'trajectory%06d.txt'%tr.number, tr.data, fmt='%.2f')
+            np.savetxt(self.datadir+'trajectory%06d.txt'%tr.number, tr.data, fmt='%.2f',  header="frame particle# x y area")
             print "closed trajectory: ",tr.number, np.sqrt(tr.maxdist)
 
     def findTrajectories(self,framelim=False, blobsize=False,lenlim=50, threshold=False, kernel=False, delete=False, invert=False, mask=False, channel=0, sphericity=-1., outpSpac=200, diskfit=True):
@@ -466,7 +471,7 @@ class movie():
                         blobs=tr.findNeighbour(blobs, framenum, idx=3) #for each open trajectory, find corresponding particle in circle set
                         if not tr.opened: #if a trajectory is closed in the process (no nearest neighbour found), move to closed trajectories.
                             if tr.data.shape[0]>lenlim:
-                                np.savetxt(self.datadir+'trajectory%06d.txt'%tr.number, tr.data, fmt='%.2f')
+                                np.savetxt(self.datadir+'trajectory%06d.txt'%tr.number, tr.data, fmt='%.2f',  header="frame particle# x y area")
                                 print "closed trajectory: ", tr.number, tr.maxdist
                             del activetrajectories[tr.number]
                 for blob in blobs: #if any circles are left in the set, open a new trajectory for each of them
@@ -477,7 +482,7 @@ class movie():
         print "trajectories:", len(activetrajectories)
         for tr in self.trajectories.values():
             #if tr.data.shape[0]>lenlim:
-            np.savetxt(self.datadir+'trajectory%06d.txt'%tr.number, tr.data, fmt='%.2f')
+            np.savetxt(self.datadir+'trajectory%06d.txt'%tr.number, tr.data, fmt='%.2f',  header="frame particle# x y area")
             print "closed trajectory: ",tr.number, tr.maxdist
         mov.release()
 
@@ -621,7 +626,7 @@ class movie():
                 precnum,folnum=-1,-1
             if save:
                 for tr in self.trajectories.values():
-                    np.savetxt(save+'%06d.txt'%(tr.number),tr.data,fmt='%.03f')
+                    np.savetxt(save+'%06d.txt'%(tr.number),tr.data,fmt='%.03f',  header="frame particle# x y area")
 
     def Histogram(self, fnum, fname="temphist.png", channel=0):
         """plots the RGB histogram for frame # fnum. Auxiliary function for remote parameter setting. Replaces HistoWin in parameter GUI."""
@@ -811,7 +816,7 @@ class clusterMovie(movie):
                     except QhullError:
                         print "Voronoi construction failed!"
                 mom=np.vstack((mom,addmom))
-        np.savetxt(self.datadir+'clusters.txt',mom,fmt="%.2f")
+        np.savetxt(self.datadir+'clusters.txt',mom,fmt="%.2f", header="framenum cluster# area x y voronoiarea")
         print 'thresh', thresh, 'gkern',gkern, 'clsize', clsize, 'channel', channel, 'rng', rng, 'spacing', spacing, 'mask', maskfile
 
         return mom
@@ -870,6 +875,7 @@ class imStack(movie):
             try: os.remove(self.datadir+'coords.txt')
             except: pass            
         dumpfile=open(self.datadir+'coords.txt','a')
+        dumpfile.write('#frame particle# blobsize x y split_blob? [reserved] sphericity\n')
         allblobs=np.array([]).reshape(0,8)
         counter=0
         for i in range(len(self.stack)):
@@ -905,6 +911,36 @@ class imStack(movie):
         if len(contdict)>0: 
             with open(self.datadir+'contours.pkl','wb') as f: 
                 cPickle.dump(contdict,f,cPickle.HIGHEST_PROTOCOL)
+                
+                
+    def blenderPrep(self, nfacets=10, smoothlen=5):
+        self.loadTrajectories()
+        if len(self.trajectories)>0 and os.path.isfile(self.datadir+'contours.pkl'):
+            with open(self.datadir+'contours.pkl', 'rb') as f:
+                conts=cPickle.load(f)
+            todelete=glob(self.datadir+'pointfile*.txt')+glob(self.datadir+'vertfile*.txt')
+            for fname in todelete: os.remove(fname)
+            for j in self.trajectories.keys():
+                t1=self.trajectories[j]
+                if len(t1.data.shape)==2:
+                    keys=[r[0].replace('.','-') for r in t1.data[:,:1].astype(str)]
+                    with open(self.datadir+'pointfile%03d.txt'%t1.number, 'a') as pointfile:
+                        data=conts[keys[0]].flatten().reshape(-1,2)
+                        pointfile.write('%.2f %.2f %.2f \n'%(np.mean(data[:,0]),np.mean(data[:,1]),float(keys[0].split('-')[0])))
+                        for i in range(len(keys)):
+                            zvals=np.array([int(keys[i].split('-')[0])]*nfacets)
+                            data=conts[keys[i]].flatten().reshape(-1,2)
+                            x,y=data[:,0],data[:,1]
+                            xnew,ynew=smooth(x,smoothlen),smooth(y,smoothlen)
+                            inds=list(np.linspace(0,len(xnew)-1,nfacets).astype(int))
+                            np.savetxt(pointfile,np.vstack((xnew[inds],ynew[inds],zvals)).T, fmt='%.2f')
+                        pointfile.write('%.2f %.2f %.2f'%(np.mean(x),np.mean(y),zvals[0]))
+                            
+                    verts=[[0,i-1,i,-1] for i in range(2,nfacets+1)]+[[0,nfacets,1,-1]]
+                    verts+=[[(j-1)*nfacets+k-1,(j-1)*nfacets+k,j*nfacets+k,j*nfacets+k-1] for j in range(1,len(keys)) for k in range(2,nfacets+1)]
+                    verts+=[[(j-1)*nfacets+nfacets, (j-1)*nfacets+1, j*nfacets+1, j*nfacets+nfacets] for j in range(1,len(keys))]
+                    verts+=[[nfacets*len(keys)+1,nfacets*len(keys)-i-1,nfacets*len(keys)-i,-1] for i in range(nfacets-1)]+[[nfacets*len(keys)+1,nfacets*len(keys), nfacets*(len(keys)-1)+1,-1]]
+                    np.savetxt(self.datadir+'vertfile%03d.txt'%t1.number,np.array(verts),fmt="%d")
 
 
 def extract_blobs(bwImg, framenum, blobsize=(0,1e5), sphericity=-1, diskfit=True, outpSpac=200,returnCont=False, spherthresh=1e5):
@@ -1086,3 +1122,64 @@ def str_to_bool(s):
         return False
     else:
         raise ValueError("Cannot convert {} to bool".format(s))
+    
+    
+    #scipy cookbook http://wiki.scipy.org/Cookbook/SignalSmooth
+def smooth(x,window_len=11,window='hanning'):
+    """smooth the data using a window with requested size.
+    
+    This method is based on the convolution of a scaled window with the signal.
+    The signal is prepared by introducing reflected copies of the signal 
+    (with the window size) in both ends so that transient parts are minimized
+    in the begining and end part of the output signal.
+    
+    input:
+        x: the input signal 
+        window_len: the dimension of the smoothing window; should be an odd integer
+        window: the type of window from 'flat', 'hanning', 'hamming', 'bartlett', 'blackman'
+            flat window will produce a moving average smoothing.
+            
+    output:
+        the smoothed signal
+        
+    example:
+                    
+    t=linspace(-2,2,0.1)
+    x=sin(t)+randn(len(t))*0.1
+    y=smooth(x)
+            
+    see also: 
+    
+        numpy.hanning, numpy.hamming, numpy.bartlett, numpy.blackman, numpy.convolve
+        scipy.signal.lfilter
+                    
+    TODO: the window parameter could be the window itself if an array instead of a string
+    NOTE: length(output) != length(input), to correct this: return y[(window_len/2-1):-(window_len/2)] instead of just y.
+    """
+                    
+    if x.ndim != 1:
+        raise ValueError, "smooth only accepts 1 dimension arrays."
+                    
+    if x.size < window_len:
+        raise ValueError, "Input vector needs to be bigger than window size."
+                    
+                    
+    if window_len<3:
+        return x
+                        
+                        
+    if not window in ['flat', 'hanning', 'hamming', 'bartlett', 'blackman']:
+        raise ValueError, "Window is on of 'flat', 'hanning', 'hamming', 'bartlett', 'blackman'"
+                        
+                        
+    s=np.r_[x[window_len-1:0:-1],x,x[-1:-window_len:-1]]
+    #print(len(s))
+    if window == 'flat': #moving average
+        w=ones(window_len,'d')
+    else:
+        w=eval('np.'+window+'(window_len)')
+    
+    y=np.convolve(w/w.sum(),s,mode='valid')
+    return y
+                            
+                            
