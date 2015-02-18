@@ -31,7 +31,7 @@ from sys import exc_info
 
 
 #this directory definition is changed in the source code at runtime which is probably a really bad idea but good for portability
-moviedir='/media/cmdata/datagoe/gunnar/acrylamide-140211/'#end
+moviedir='/media/cmdata/datagoe/gunnar/Polyacryl2/'#end
 
 def GetBitmap(width=1, height=1, colour = (0,0,0) ):
     """Helper funcion to generate a wxBitmap of defined size and colour.
@@ -217,7 +217,8 @@ class MyImage(wx.StaticBitmap):
             oldcrop=self.pparent.movie.parameters['crop']
             pt=event.GetPosition()
             pt=self.parent.CalcUnscrolledPosition(pt)
-            self.pparent.movie.parameters['crop']=[oldcrop[1]+self.savept[1],oldcrop[0]+self.savept[0],oldcrop[1]+pt[1],oldcrop[0]+pt[0]]
+            self.pparent.movie.parameters['crop']=[oldcrop[1]+int(self.savept[1]/self.scale),oldcrop[0]+int(self.savept[0]/self.scale),
+                oldcrop[1]+int(pt[1]/self.scale),oldcrop[0]+int(pt[0]/self.scale)]
             self.pparent.parameters['crop']=self.pparent.movie.parameters['crop']
             self.pparent.stCropContr.SetValue(str(self.pparent.movie.parameters['crop'])[1:-1])
             self.pparent.StImgDisplay()
@@ -235,8 +236,9 @@ class MyImage(wx.StaticBitmap):
                 im=wx.Image(image)
             im.Rescale(im.GetSize()[0]*self.scale,im.GetSize()[1]*self.scale)
             bit=wx.BitmapFromImage(im)
-            ds=wx.GetDisplaySize()
-            ws=(im.GetSize()[0]+120,im.GetSize()[1]+200)
+            #ds=wx.GetDisplaySize()
+            ds=wx.Display(0).GetGeometry().GetSize()
+            ws=(im.GetSize()[0]+120,im.GetSize()[1]+300)
             if ws[0]<ds[0] and ws[1]<ds[1]:
                 winsize=ws
             else:
@@ -585,8 +587,9 @@ class MyFrame(wx.Frame):
             else:
                 im=np.zeros(self.parameters['imsize'])
             im.Rescale(im.GetSize()[0]*self.scp.im.scale,im.GetSize()[1]*self.scp.im.scale)
-            ds=wx.GetDisplaySize()
-            ws=(im.GetSize()[0]+120,im.GetSize()[1]+200)
+            #ds=wx.GetDisplaySize()
+            ds=wx.Display(0).GetGeometry().GetSize()
+            ws=(im.GetSize()[0]+120,im.GetSize()[1]+300)
             if ws[0]<ds[0] and ws[1]<ds[1]:
                 winsize=ws
             else:
@@ -635,7 +638,8 @@ class MyFrame(wx.Frame):
             if type(image).__name__=='str':
                 im=wx.Image(image)
             im.Rescale(im.GetSize()[0]*self.scp.im.scale,im.GetSize()[1]*self.scp.im.scale)
-            ds=wx.GetDisplaySize()
+            #ds=wx.GetDisplaySize()
+            ds=wx.Display(0).GetGeometry().GetSize()
             ws=(im.GetSize()[0]+120,im.GetSize()[1]+200)
             if ws[0]<ds[0] and ws[1]<ds[1]:
                 winsize=ws
@@ -691,7 +695,8 @@ class MyFrame(wx.Frame):
             if type(image).__name__=='str':
                 im=wx.Image(image)
             im.Rescale(im.GetSize()[0]*self.scp.im.scale,im.GetSize()[1]*self.scp.im.scale)
-            ds=wx.GetDisplaySize()
+            #ds=wx.GetDisplaySize()
+            ds=wx.Display(0).GetGeometry().GetSize()
             ws=(im.GetSize()[0]+120,im.GetSize()[1]+200)
             if ws[0]<ds[0] and ws[1]<ds[1]:
                 winsize=ws
@@ -737,7 +742,8 @@ class MyFrame(wx.Frame):
                 im.SetData(image.tostring())
             if type(image).__name__=='str':
                 im=wx.Image(image)
-            ds=wx.GetDisplaySize()
+            #ds=wx.GetDisplaySize()
+            ds=wx.Display(0).GetGeometry().GetSize()
             ws=(int(im.GetSize()[0]*sc+300),int(im.GetSize()[1]*sc+200))
             self.SetSize((min(ws[0],ds[0]),min(ws[1],ds[1])))
             im.Rescale(im.GetSize()[0]*sc,im.GetSize()[1]*sc)
