@@ -21,7 +21,7 @@ from sys import exc_info
 
 
 #this directory definition is changed in the source code at runtime which is probably a really bad idea but good for portability
-moviedir='/media/ad3c0d78-899f-4356-8c89-3b212880eb69/data/20150107_Many_droplet_system_height_test_6mm_wide_15wtpcTTAB_5uL_50um_Droplets_2x_Olympus_4fps/'#end
+moviedir='/media/cmdata/datagoe/140916/'#end
 
 def GetBitmap(width=1, height=1, colour = (0,0,0) ):
     """Helper funcion to generate a wxBitmap of defined size and colour.
