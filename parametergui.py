@@ -31,7 +31,7 @@ from sys import exc_info
 
 
 #this directory definition is changed in the source code at runtime which is probably a really bad idea but good for portability
-moviedir='/media/cmdata/datagoe/gunnar/acrylamide-140209/'#end
+moviedir='/media/cmdata/datagoe/140916/'#end
 
 def GetBitmap(width=1, height=1, colour = (0,0,0) ):
     """Helper funcion to generate a wxBitmap of defined size and colour.
@@ -522,7 +522,7 @@ class MyFrame(wx.Frame):
         self.framenum=0
         self.parameters={
             'framerate':0.,'sphericity':-1.0,
-            'imsize':(0,0),'blobsize':(5,90),'crop':[0]*4, 'framelim':(0,0),
+            'imsize':(0,0),'blobsize':(5,90),'crop':[0]*4, 'framelim':(0,0), 'circle':[0,0,1e4],
             'frames':0,  'threshold':120, 'struct':5,  'channel':0, 'blur':1,'spacing':1,
             'sizepreview':True, 'invert':False, 'diskfit':False, 'mask':True
         }
@@ -773,7 +773,7 @@ class MyFrame(wx.Frame):
                 try:
                     im=np.array(Image.open(self.movie.datadir+'mask.png'))
                     if len(im.shape)==3: im=im[:,:,self.parameters['channel']]
-                    mask=(im>0).astype(float)
+                    mask=(im>0).astype(float)                    
                 except: mask=np.zeros(self.movie.parameters['imsize'][::-1])+1.
             else: mask=np.zeros(self.movie.parameters['imsize'][::-1])+1.
             self.images['Mask']=mask.astype(np.uint8)*255
@@ -844,8 +844,16 @@ class MyFrame(wx.Frame):
                     im=np.array(Image.open(self.movie.datadir+'mask.png'))
                     if len(im.shape)==3: im=im[:,:,self.parameters['channel']]
                     mask=(im>0).astype(float)
-                except: mask=np.zeros(self.movie.parameters['imsize'][::-1])+1.
-            else: mask=np.zeros(self.movie.parameters['imsize'][::-1])+1.
+                    if self.parameters['circle'][0]==0:
+                        th=im.copy().astype(np.uint8)
+                        contours, hierarchy=cv2.findContours(th,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
+                        (xm,ym),rm=cv2.minEnclosingCircle(contours[0])
+                        self.parameters['circle']=[xm,ym,rm]
+                        print self.parameters['circle']
+                except: 
+                    mask=np.zeros(self.movie.parameters['imsize'][::-1])+1.
+            else:
+                mask=np.zeros(self.movie.parameters['imsize'][::-1])+1.
             self.images['Mask']=mask.astype(np.uint8)*255
             for item in self.cImstate:
                 if item.GetValue(): self.imType=item.GetLabelText()
@@ -888,22 +896,20 @@ class MyFrame(wx.Frame):
             if self.imType=='Voronoi' and rt.vorflag:
                 blobs=rt.extract_blobs(thresh, -1, self.parameters['blobsize'], -1, diskfit=False,returnCont=False, outpSpac=1)
                 if blobs.shape[0]>1:
+                    newpoints=[]
                     vor=rt.Voronoi(blobs[:,3:5])
-                    outind=[-1]
-                    for s in range(vor.vertices.shape[0]):
-                        if vor.vertices[s,0]<0 or vor.vertices[s,0]>image.shape[0]: outind+=[s]
-                        if vor.vertices[s,1]<0 or vor.vertices[s,1]>image.shape[1]: outind+=[s]
-                        outind=list(set(outind))
-                        for i in range(blobs.shape[0]):
-                            r=vor.regions[vor.point_region[i]]
-                            flag=True
-                            for j in outind:
-                                if j in r: flag=False
-                            if flag:
-                                col=tuple([int(255*c) for c in cm.jet(i*255/len(vor.points))])
-                                #print col
-                                pl.plot(vor.vertices[r,1],vor.vertices[r,0], c=col)
-                                cv2.polylines(self.images['Voronoi'], [(vor.vertices[r]).astype(np.int32)], True, col, 2)
+                    circ=self.parameters['circle']
+                    dists=np.sum((vor.vertices-np.array(circ[:2]))**2,axis=1)-circ[2]**2
+                    extinds=[-1]+(dists>0).nonzero()[0]
+                    for i in range(blobs.shape[0]):
+                        r=vor.regions[vor.point_region[i]]
+                        newpoints+=[rt.circle_invert(blobs[i,3:5],circ, integ=True)]
+                    pts=np.vstack((blobs[:,3:5],np.array(newpoints)))
+                    vor=rt.Voronoi(pts)
+                    for i in range(blobs.shape[0]):
+                        r=vor.regions[vor.point_region[i]]
+                        col=tuple([int(255*c) for c in cm.jet(i*255/len(vor.points))])[:3]
+                        cv2.polylines(self.images['Voronoi'], [(vor.vertices[r]).astype(np.int32)], True, col[:3], 2)
             self.scp.im.Redraw()
             try: self.HistoWin.Update(self, self.images[self.imType])
             except AttributeError: pass
@@ -1094,7 +1100,7 @@ class MyFrame(wx.Frame):
         if self.maskCheck.GetValue(): mask=self.movie.datadir+'mask.png'
         else: mask=False
         self.parameters['channel']=int(self.channelCB.GetValue())
-        self.movie.getClusters(thresh=self.parameters['threshold'],gkern=self.parameters['blur'],clsize=self.parameters['blobsize'],channel=self.parameters['channel'],rng=self.parameters['framelim'],spacing=self.parameters['spacing'], maskfile=self.movie.datadir+'mask.png')
+        self.movie.getClusters(thresh=self.parameters['threshold'],gkern=self.parameters['blur'],clsize=self.parameters['blobsize'],channel=self.parameters['channel'],rng=self.parameters['framelim'],spacing=self.parameters['spacing'], maskfile=self.movie.datadir+'mask.png', circ=self.parameters['circle'])
         self.sb.SetStatusText(self.moviefile, 1)
         self.getCluB.Enable()
         

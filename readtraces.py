@@ -154,7 +154,7 @@ class movie():
             framelim=(0,1e8)
         self.parameters={
             'framerate':framerate, 'sphericity':-1.,#float
-            'imsize':shape,'blobsize':(0,30),'crop':[0,0,shape[0],shape[1]], 'framelim':framelim, #tuples
+            'imsize':shape,'blobsize':(0,30),'crop':[0,0,shape[0],shape[1]], 'framelim':framelim, 'circle':[shape[0]/2, shape[1]/2, int(np.sqrt(shape[0]**2+shape[1**2]))],#tuples
             'channel':0, 'blur':1, 'spacing':1, 'struct':1, 'threshold':128, 'frames':frames,#ints
             'sizepreview':True, 'invert':False, 'diskfit':False, 'mask':True #bools
         }
@@ -767,8 +767,8 @@ class clusterMovie(movie):
         self.typ="Clusters"
         self.bg=False
 
-    def getClusters(self,thresh=128,gkern=61,clsize=(1,1e5),channel=0,rng=(1,1e8),spacing=100, maskfile=''):
-        print 'thresh', thresh, 'gkern',gkern, 'clsize', clsize, 'channel', channel, 'rng', rng, 'spacing', spacing, 'mask', maskfile
+    def getClusters(self,thresh=128,gkern=61,clsize=(1,1e5),channel=0,rng=(1,1e8),spacing=100, maskfile='', circ=[0,0,1e4]):
+        print 'thresh', thresh, 'gkern',gkern, 'clsize', clsize, 'channel', channel, 'rng', rng, 'spacing', spacing, 'mask', maskfile, 'circle',circ
         t0=time()
         if os.path.exists(maskfile):
             mask=np.array(Image.open(maskfile))[:,:,0]
@@ -783,11 +783,11 @@ class clusterMovie(movie):
         if gkern%2==0:
             print "warning: Gaussian kernel size has to be odd. New size %d."%(gkern+1)
             blur=blur+1
-        mom=np.empty((0,6))
+        allblobs=np.empty((0,6))
         success=True
         while success and framenum<rng[1]:
             framenum+=1
-            if framenum%500==0: print framenum, time()-t0, mom.shape
+            if framenum%500==0: print framenum, time()-t0, allblobs.shape
             success,image=mov.read()
             if not success: break
             if framenum%spacing==0:
@@ -800,35 +800,34 @@ class clusterMovie(movie):
                     Image.fromarray(mxContr(blurIm).astype(np.uint8)).save(self.datadir+'blur.png')
                     Image.fromarray(image).save(self.datadir+'orig.png')
                 cnt,hier=cv2.findContours(threshIm,cv2.RETR_TREE,cv2.CHAIN_APPROX_NONE)
-                addmom=np.empty((0,6))
+                blobs=np.empty((0,6))
                 count=0
                 for c in range(len(cnt)):
                     mnt=cv2.moments(cnt[c])
                     if clsize[0]<mnt['m00']<clsize[1]:
                         count+=1
-                        addmom=np.vstack((addmom,np.array([framenum,count,mnt['m00'], mnt['m01']/mnt['m00'], mnt['m10']/mnt['m00'],-1])))
-                if vorflag and addmom.shape[0]>1:
+                        blobs=np.vstack((blobs,np.array([framenum,count,mnt['m00'], mnt['m01']/mnt['m00'], mnt['m10']/mnt['m00'],-1])))
+                if vorflag and blobs.shape[0]>1 and self.parameters['circle'][0]!=0:
                     try:
-                        vor=Voronoi(addmom[:,3:5])
-                        outind=[-1]
-                        for s in range(vor.vertices.shape[0]):
-                            if vor.vertices[s,0]<0 or vor.vertices[s,0]>image.shape[0]: outind+=[s]
-                            if vor.vertices[s,1]<0 or vor.vertices[s,1]>image.shape[1]: outind+=[s]
-                        outind=list(set(outind))
-                        for i in range(addmom.shape[0]):
+                        newpoints=[]
+                        vor=Voronoi(blobs[:,3:5])
+                        dists=np.sum((vor.vertices-np.array(circ[:2]))**2,axis=1)-circ[2]**2
+                        #extinds=[-1]+(dists>0).nonzero()[0]
+                        for i in range(blobs.shape[0]):
                             r=vor.regions[vor.point_region[i]]
-                            flag=True
-                            for j in outind:
-                                if j in r: flag=False
-                            if flag:
-                                addmom[i,-1]=PolygonArea(vor.vertices[r])
+                            newpoints+=[circle_invert(blobs[i,3:5],circ, integ=True)]
+                        pts=np.vstack((blobs[:,3:5],np.array(newpoints)))
+                        vor=Voronoi(pts)
+                        for i in range(blobs.shape[0]):
+                            r=vor.regions[vor.point_region[i]]
+                            blobs[i,-1]=PolygonArea(vor.vertices[r])
                     except QhullError:
                         print "Voronoi construction failed!"
-                mom=np.vstack((mom,addmom))
-        np.savetxt(self.datadir+'clusters.txt',mom,fmt="%.2f", header="framenum cluster# area x y voronoiarea")
+                allblobs=np.vstack((allblobs,blobs))
+        np.savetxt(self.datadir+'clusters.txt',allblobs,fmt="%.2f", header="framenum cluster# area x y voronoiarea")
         print 'thresh', thresh, 'gkern',gkern, 'clsize', clsize, 'channel', channel, 'rng', rng, 'spacing', spacing, 'mask', maskfile
 
-        return mom
+        return allblobs
 
 
 class imStack(movie):
@@ -1190,5 +1189,12 @@ def smooth(x,window_len=11,window='hanning'):
     
     y=np.convolve(w/w.sum(),s,mode='valid')
     return y
-                            
-                            
+
+def circle_invert(pt, cr, integ=True):
+    """Inverts point (inside) at circle cirumference. Used to create mirror clusters for Voronoi construction.
+    arguments point: (x,y), circle: (xc,yc,r). returns (x,y) as float"""
+    d=np.sqrt((pt[0]-cr[0])**2+(pt[1]-cr[1])**2) #distance to centre
+    scf=2*cr[2]/d-1 #scaling factor 
+    newpt=[cr[0]+(pt[0]-cr[0])*scf, cr[1]+(pt[1]-cr[1])*scf]
+    if integ: newpt=[int(p) for p in newpt]
+    return  newpt
