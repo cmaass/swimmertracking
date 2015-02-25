@@ -5,10 +5,20 @@
 
 import wx
 import wx.lib.scrolledpanel as scp
+import wxmpl
 import numpy as np
 from PIL import Image
 from matplotlib import pylab as pl
 from matplotlib import cm
+import matplotlib
+matplotlib.use('WXAgg')
+matplotlib.use('WXAgg')
+from matplotlib.backends.backend_wxagg import FigureCanvasWxAgg as FigureCanvas
+
+from matplotlib.backends.backend_wx import NavigationToolbar2Wx
+
+from matplotlib.figure import Figure
+from mpl_toolkits.mplot3d import Axes3D
 import os
 import io
 import pickle
@@ -21,7 +31,7 @@ from sys import exc_info
 
 
 #this directory definition is changed in the source code at runtime which is probably a really bad idea but good for portability
-moviedir='/media/cmdata/datagoe/140916/'#end
+moviedir='/media/cmdata/datagoe/gunnar/acrylamide-140209/'#end
 
 def GetBitmap(width=1, height=1, colour = (0,0,0) ):
     """Helper funcion to generate a wxBitmap of defined size and colour.
@@ -62,7 +72,64 @@ class InfoWin(wx.Frame):
         else: self.infotext=text
         self.text.SetValue(self.infotext)
 
+#source:
+#http://matplotlib.org/examples/user_interfaces/embedding_in_wx2.html
+class StackWin(wx.Frame):
+    def __init__(self,parent):
+        wx.Frame.__init__(self,parent,-1, 'Stack plot',size=(550,350))
+	self.parent=parent
+        self.SetBackgroundColour(wx.NamedColor("WHITE"))
 
+        self.figure = Figure()
+        self.canvas = FigureCanvas(self, -1, self.figure)
+        self.axes = Axes3D(self.figure)
+        
+        try: 
+	  data=np.loadtxt(self.parent.movie.datadir+'coords.txt')
+	  xs=data[:,3]
+	  ys=data[:,4]
+	  zs=data[:,0]
+	  ss=data[:,2]
+	  self.axes.scatter(xs, ys, zs,s=ss)
+	  scaling = np.array([getattr(self.axes, 'get_{}lim'.format(dim))() for dim in 'xyz'])
+	  self.axes.auto_scale_xyz(*[[np.min(scaling), np.max(scaling)]]*3)
+	except: 
+	  print "sorry, plot failed! Is there a coordinate file?"
+
+        
+        self.sizer = wx.BoxSizer(wx.VERTICAL)
+        self.sizer.Add(self.canvas, 1, wx.LEFT | wx.TOP | wx.GROW)
+        self.SetSizer(self.sizer)
+        self.Fit()
+
+        self.add_toolbar() # comment this out for no toolbar
+
+
+    def add_toolbar(self):
+        self.toolbar = NavigationToolbar2Wx(self.canvas)
+        self.toolbar.Realize()
+        if wx.Platform == '__WXMAC__':
+            # Mac platform (OSX 10.3, MacPython) does not seem to cope with
+            # having a toolbar in a sizer. This work-around gets the buttons
+            # back, but at the expense of having the toolbar at the top
+            self.SetToolBar(self.toolbar)
+        else:
+            # On Windows platform, default window size is incorrect, so set
+            # toolbar width to figure width.
+            tw, th = self.toolbar.GetSizeTuple()
+            fw, fh = self.canvas.GetSizeTuple()
+            # By adding toolbar in sizer, we are able to put it at the bottom
+            # of the frame - so appearance is closer to GTK version.
+            # As noted above, doesn't work for Mac.
+            self.toolbar.SetSize(wx.Size(fw, th))
+            self.sizer.Add(self.toolbar, 0, wx.LEFT | wx.EXPAND)
+        # update the axes menu on the toolbar
+        self.toolbar.update()
+
+
+    def OnPaint(self, event):
+        self.canvas.draw()
+        
 
 class HistoWin(wx.Frame):
     """Window displaying RGB histogram of current image in semilog y. """
@@ -93,8 +160,6 @@ class HistoWin(wx.Frame):
         buf.seek(0)
         im=wx.ImageFromStream(buf)
         self.plot.SetBitmap(wx.BitmapFromImage(im))
-
-
 
 
 class MyPanel(scp.ScrolledPanel):
@@ -129,14 +194,26 @@ class MyImage(wx.StaticBitmap):
         self.savept=(0,0)
 
     def OnLeftDown(self,event):
-        pt=event.GetPosition()
-        pt=self.parent.CalcUnscrolledPosition(pt)
-        self.savestatus=self.pparent.sb.GetStatusText(0)
-        if len(self.pparent.images[self.pparent.imType].shape)==2:
-            RGB=", grey %d"%self.pparent.images[self.pparent.imType][pt[1],pt[0]]
+        ctrlstate=wx.GetKeyState(wx.WXK_CONTROL)
+        if not ctrlstate:
+            pt=event.GetPosition()
+            pt=self.parent.CalcUnscrolledPosition(pt)
+            self.savestatus=self.pparent.sb.GetStatusText(0)
+            if len(self.pparent.images[self.pparent.imType].shape)==2:
+                RGB=", grey %d"%self.pparent.images[self.pparent.imType][pt[1],pt[0]]
+            else:
+                RGB=", RGB (%d,%d,%d)"%tuple(self.pparent.images[self.pparent.imType][pt[1],pt[0],:])
+            self.pparent.sb.SetStatusText("x %d, y %d"%(pt.x/self.scale,pt.y/self.scale)+RGB, 0)
         else:
-            RGB=", RGB (%d,%d,%d)"%tuple(self.pparent.images[self.pparent.imType][pt[1],pt[0],:])
-        self.pparent.sb.SetStatusText("x %d, y %d"%(pt.x/self.scale,pt.y/self.scale)+RGB, 0)
+            pt=event.GetPosition()
+            pt=self.parent.CalcUnscrolledPosition(pt)
+            self.savestatus=self.pparent.sb.GetStatusText(0)
+            if len(self.pparent.images[self.pparent.imType].shape)==2:
+                RGB=", grey %d"%self.pparent.images[self.pparent.imType][pt[1],pt[0]]
+            else:
+                RGB=", RGB (%d,%d,%d)"%tuple(self.pparent.images[self.pparent.imType][pt[1],pt[0],:])
+            self.pparent.sb.SetStatusText("x %d, y %d with control"%(pt.x/self.scale,pt.y/self.scale)+RGB, 0)
+                        
 
     def OnLeftUp(self,event):
         self.pparent.sb.SetStatusText(self.savestatus, 0)
@@ -149,11 +226,13 @@ class MyImage(wx.StaticBitmap):
                 
     def OnRightUp(self,event):
         if self.pparent.movie.typ=="3D stack":
-            oldcrop=self.pparent.movie.crop
+            oldcrop=self.pparent.movie.parameters['crop']
             pt=event.GetPosition()
             pt=self.parent.CalcUnscrolledPosition(pt)
-            self.pparent.movie.crop=[oldcrop[0]+self.savept[0], oldcrop[1]+self.savept[1], oldcrop[0]+pt[0], oldcrop[1]+pt[1]]
-            self.pparent.stCropContr.SetValue(str(self.pparent.movie.crop)[1:-1])
+            self.pparent.movie.parameters['crop']=[oldcrop[1]+int(self.savept[1]/self.scale),oldcrop[0]+int(self.savept[0]/self.scale),
+                oldcrop[1]+int(pt[1]/self.scale),oldcrop[0]+int(pt[0]/self.scale)]
+            self.pparent.parameters['crop']=self.pparent.movie.parameters['crop']
+            self.pparent.stCropContr.SetValue(str(self.pparent.movie.parameters['crop'])[1:-1])
             self.pparent.StImgDisplay()
             
 
@@ -169,8 +248,9 @@ class MyImage(wx.StaticBitmap):
                 im=wx.Image(image)
             im.Rescale(im.GetSize()[0]*self.scale,im.GetSize()[1]*self.scale)
             bit=wx.BitmapFromImage(im)
-            ds=wx.GetDisplaySize()
-            ws=(im.GetSize()[0]+120,im.GetSize()[1]+200)
+            #ds=wx.GetDisplaySize()
+            ds=wx.Display(0).GetGeometry().GetSize()
+            ws=(im.GetSize()[0]+120,im.GetSize()[1]+300)
             if ws[0]<ds[0] and ws[1]<ds[1]:
                 winsize=ws
             else:
@@ -190,8 +270,6 @@ class MyFrame(wx.Frame):
         buttonPanel=wx.Panel(self)
         nbPanel = wx.Panel(self)
 
-
-
         threshLabel=wx.StaticText(paraPanel,-1,'Threshold')
         self.threshContr=wx.TextCtrl(paraPanel,200,'',size=(50,-1),style=wx.TE_PROCESS_ENTER)
         BGrngLabel=wx.StaticText(paraPanel,-1,'BG range')
@@ -204,12 +282,10 @@ class MyFrame(wx.Frame):
         self.frameContr=wx.TextCtrl(paraPanel,205,'0',size=(60,-1),style=wx.TE_PROCESS_ENTER)
         psizeLabel=wx.StaticText(paraPanel,-1,'Part. size')
         self.psizeContr=wx.TextCtrl(paraPanel,206,'',size=(80,-1), style=wx.TE_PROCESS_ENTER)
-        self.sizeCheck=wx.CheckBox(paraPanel, -1, label='Draw sizes')
-        self.sizeCheck.SetValue(False)
-        self.invCheck=wx.CheckBox(paraPanel, -1, label='Invert')
-        self.maskCheck=wx.CheckBox(paraPanel, -1, label='Mask')
-        self.maskCheck.SetValue(True)
-        self.diskfitCheck=wx.CheckBox(paraPanel, -1, label='Fit disk')
+        self.sizeCheck=wx.CheckBox(paraPanel, 211, label='Draw sizes')
+        self.invCheck=wx.CheckBox(paraPanel, 212, label='Invert')
+        self.maskCheck=wx.CheckBox(paraPanel, 213, label='Mask')
+        self.diskfitCheck=wx.CheckBox(paraPanel, 214, label='Fit disk')
         channelCBlabel=wx.StaticText(paraPanel,-1,'RGB channel')
         self.channelCB=wx.ComboBox(paraPanel, 207, choices=['0','1','2'], style=wx.CB_READONLY,size=(50,-1))
         self.channelCB.SetValue('0')
@@ -281,6 +357,8 @@ class MyFrame(wx.Frame):
         wx.RadioButton(stacktab, 623, label='Particles')]
         self.stCropContr=wx.TextCtrl(stacktab,651,'',size=(140,-1), style=wx.TE_PROCESS_ENTER)
         stackResetCropB=wx.Button(stacktab,652,"Reset crop",size=(140,-1))
+        self.getStCoordB=wx.Button(stacktab,653,"Get coordinates",size=(140,-1))
+        plotStackB=wx.Button(stacktab,654,"Plot stack...",size=(140,-1))
 
 
         #setting up the window layout with tons of nested sizers.
@@ -382,6 +460,8 @@ class MyFrame(wx.Frame):
         sbsizerSt = wx.StaticBoxSizer(sbSt, wx.VERTICAL)
         for but in self.sImstate: sbsizerSt.Add(but, 0, wx.ALIGN_LEFT|wx.ALL,5)
         vboxStack.Add(sbsizerSt)
+        vboxStack.Add(plotStackB, 0, wx.ALIGN_LEFT|wx.ALL,5)
+        vboxStack.Add(self.getStCoordB, 0, wx.ALIGN_LEFT|wx.ALL,5)
         self.nb.AddPage(stacktab,'3D stack')
 
         vboxNB.Add(self.nb)
@@ -413,15 +493,21 @@ class MyFrame(wx.Frame):
         self.Bind(wx.EVT_BUTTON, self.ReadParas, id=204)
         self.Bind(wx.EVT_TEXT_ENTER, self.ReadParas, id=205)
         self.Bind(wx.EVT_TEXT_ENTER, self.ReadParas, id=206)
-        self.Bind(wx.EVT_BUTTON, self.ReadParas, id=207)
+        self.Bind(wx.EVT_COMBOBOX, self.ReadParas, id=207)
         self.Bind(wx.EVT_TEXT_ENTER, self.ReadParas, id=208)
         self.Bind(wx.EVT_TEXT_ENTER, self.ReadParas, id=209)
         self.Bind(wx.EVT_TEXT_ENTER, self.ReadParas, id=210)
+        self.Bind(wx.EVT_CHECKBOX, self.ReadParas, id=211)
+        self.Bind(wx.EVT_CHECKBOX, self.ReadParas, id=212)
+        self.Bind(wx.EVT_CHECKBOX, self.ReadParas, id=213)
+        self.Bind(wx.EVT_CHECKBOX, self.ReadParas, id=214)
         self.Bind(wx.EVT_TEXT_ENTER, self.ReadParas, id=651)
         # bindings handling the image display (groupof radio buttons)
         self.Bind(wx.EVT_BUTTON, self.GetClusters, id=501)
         self.Bind(wx.EVT_BUTTON, self.ConvClustTraj, id=502)
         self.Bind(wx.EVT_BUTTON, self.ResetCrop, id=652)
+        self.Bind(wx.EVT_BUTTON, self.GetCoordinates, id=653)
+        self.Bind(wx.EVT_BUTTON, self.PlotStack, id=654)
         for i in range(300,307): self.Bind(wx.EVT_RADIOBUTTON, self.ImgDisplay, id=i)
         for i in range(521,527): self.Bind(wx.EVT_RADIOBUTTON, self.ClImgDisplay, id=i)
         for i in range(621,623): self.Bind(wx.EVT_RADIOBUTTON, self.StImgDisplay, id=i)
@@ -434,16 +520,26 @@ class MyFrame(wx.Frame):
         self.moviefile=''
         self.movie=rt.nomovie()
         self.framenum=0
-        self.parameters={'imsize':(0,0),'frames':0, 'framerate':0., 'thresh':120, 'size':(5,90), 'struct':5, 'sphericity':-1.0, 'channel':0, 'blur':1,'spacing':1}
+        self.parameters={
+            'framerate':0.,'sphericity':-1.0,
+            'imsize':(0,0),'blobsize':(5,90),'crop':[0]*4, 'framelim':(0,0),
+            'frames':0,  'threshold':120, 'struct':5,  'channel':0, 'blur':1,'spacing':1,
+            'sizepreview':True, 'invert':False, 'diskfit':False, 'mask':True
+        }
         #erosion/dilation kernel. basically, a circle of radius "struct" as a numpy array.
         if self.parameters['struct']>0: self.kernel= cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(self.parameters['struct'],self.parameters['struct']))
         else: self.kernel=False
         self.strContr.SetValue(str(self.parameters['struct']))
-        self.threshContr.SetValue(str(self.parameters['thresh']))
-        self.psizeContr.SetValue(str(self.parameters['size'])[1:-1])
-        self.frameMinMaxContr.SetValue("%d,%d"%(0,self.parameters['frames']))
+        self.threshContr.SetValue(str(self.parameters['threshold']))
+        self.psizeContr.SetValue(str(self.parameters['blobsize'])[1:-1])
+        self.frameMinMaxContr.SetValue("%d,%d"%self.parameters['framelim'])
         self.frameSpacContr.SetValue("%d"%(self.parameters['spacing']))
         self.blurContr.SetValue(str(self.parameters['blur']))
+        self.sizeCheck.SetValue(self.parameters['sizepreview'])
+        self.maskCheck.SetValue(self.parameters['mask'])
+        self.invCheck.SetValue(self.parameters['invert'])
+        self.diskfitCheck.SetValue(self.parameters['diskfit'])
+        
         self.cdir=moviedir
 
 
@@ -479,10 +575,12 @@ class MyFrame(wx.Frame):
                 self.parameters['imsize']=(int(re.search('(?<=ID_VIDEO_WIDTH=)[0-9]+',result).group()),int(re.search('(?<=ID_VIDEO_HEIGHT=)[0-9]+',result).group()))
                 self.parameters['framerate']=float(re.search('(?<=ID_VIDEO_FPS=)[0-9.]+',result).group())
                 self.parameters['frames']=int(round(float(re.search('(?<=ID_LENGTH=)[0-9.]+',result).group())*self.parameters['framerate']))
+                self.parameters['framelim']=(0,self.parameters['frames'])
             except:
                 self.parameters['imsize']=(0,0)
-                self.parameter['framerate']=1.
-                self.paramters['frames']=0
+                self.parameters['framerate']=1.
+                self.parameters['frames']=0
+                self.parameters['framelim']=(0,0)
             self.movie=rt.movie(self.moviefile)
             self.images['Original']=self.movie.getFrame(self.framenum)
             self.frameSldr.SetMin(0)
@@ -501,8 +599,9 @@ class MyFrame(wx.Frame):
             else:
                 im=np.zeros(self.parameters['imsize'])
             im.Rescale(im.GetSize()[0]*self.scp.im.scale,im.GetSize()[1]*self.scp.im.scale)
-            ds=wx.GetDisplaySize()
-            ws=(im.GetSize()[0]+120,im.GetSize()[1]+200)
+            #ds=wx.GetDisplaySize()
+            ds=wx.Display(0).GetGeometry().GetSize()
+            ws=(im.GetSize()[0]+120,im.GetSize()[1]+300)
             if ws[0]<ds[0] and ws[1]<ds[1]:
                 winsize=ws
             else:
@@ -511,7 +610,7 @@ class MyFrame(wx.Frame):
             self.scp.im.SetBitmap(wx.BitmapFromImage(im))
             self.scp.im.points=[]
             self.scp.im.axes=[]
-            self.frameMinMaxContr.SetValue("%d,%d"%(0,self.parameters['frames']))
+            self.frameMinMaxContr.SetValue("%d,%d"%self.parameters['framelim'])
             if os.path.exists(self.movie.datadir+'paras.txt'): self.ReadParasFromFile(filename=self.movie.datadir+'paras.txt')
             f = self.sb.GetFont()
             dc = wx.WindowDC(self.sb)
@@ -527,7 +626,7 @@ class MyFrame(wx.Frame):
             self.moviefile=dlg.GetPath()
             self.cdir=os.path.dirname(dlg.GetPath())+os.sep
             print self.cdir
-            if os.name=='posix': #this assumes you installed mplayer!
+            if os.name=='posix': 
                 with open(os.path.abspath(__file__), 'r') as f:
                     text=f.read()
                     text=re.sub("(?<=\nmoviedir=').*?(?='#end)",self.cdir,text)
@@ -535,14 +634,12 @@ class MyFrame(wx.Frame):
                     f.write(text)
             self.movie=rt.imStack(self.moviefile)
             self.images['Original']=cv2.imread(self.movie.stack[0],1)
-            self.parameters['imsize']=self.movie.shape
-            self.parameters['framerate']=-1
-            self.parameters['frames']=self.movie.frames
+            self.parameters=self.movie.parameters
             self.frameSldr.SetMin(0)
             self.frameSldr.SetMax(self.parameters['frames'])
             self.frameSldr.SetValue(0)
             self.frameContr.SetValue('0')
-            self.stCropContr.SetValue(str(self.movie.crop)[1:-1])
+            self.stCropContr.SetValue(str(self.movie.parameters['crop'])[1:-1])
             self.framenum=0
             self.zoomBox.SetValue('100%')
             self.scp.im.scale=1.
@@ -553,7 +650,8 @@ class MyFrame(wx.Frame):
             if type(image).__name__=='str':
                 im=wx.Image(image)
             im.Rescale(im.GetSize()[0]*self.scp.im.scale,im.GetSize()[1]*self.scp.im.scale)
-            ds=wx.GetDisplaySize()
+            #ds=wx.GetDisplaySize()
+            ds=wx.Display(0).GetGeometry().GetSize()
             ws=(im.GetSize()[0]+120,im.GetSize()[1]+200)
             if ws[0]<ds[0] and ws[1]<ds[1]:
                 winsize=ws
@@ -563,7 +661,7 @@ class MyFrame(wx.Frame):
             self.scp.im.SetBitmap(wx.BitmapFromImage(im))
             self.scp.im.points=[]
             self.scp.im.axes=[]
-            self.frameMinMaxContr.SetValue("%d,%d"%(0,self.parameters['frames']))
+            self.frameMinMaxContr.SetValue("%d,%d"%self.parameters['framelim'])
             if os.path.exists(self.movie.datadir+'paras.txt'): self.ReadParasFromFile(filename=self.movie.datadir+'paras.txt')
             f = self.sb.GetFont()
             dc = wx.WindowDC(self.sb)
@@ -592,6 +690,7 @@ class MyFrame(wx.Frame):
             self.parameters['imsize']=(int(re.search('(?<=ID_VIDEO_WIDTH=)[0-9]+',result).group()),int(re.search('(?<=ID_VIDEO_HEIGHT=)[0-9]+',result).group()))
             self.parameters['framerate']=float(re.search('(?<=ID_VIDEO_FPS=)[0-9.]+',result).group())
             self.parameters['frames']=int(round(float(re.search('(?<=ID_LENGTH=)[0-9.]+',result).group())*self.parameters['framerate']))
+            self.parameters['framelim']=(0,self.parameters['frames'])
             self.frameSldr.SetMin(0)
             self.frameSldr.SetMax(self.parameters['frames'])
             self.frameSldr.SetValue(0)
@@ -608,7 +707,8 @@ class MyFrame(wx.Frame):
             if type(image).__name__=='str':
                 im=wx.Image(image)
             im.Rescale(im.GetSize()[0]*self.scp.im.scale,im.GetSize()[1]*self.scp.im.scale)
-            ds=wx.GetDisplaySize()
+            #ds=wx.GetDisplaySize()
+            ds=wx.Display(0).GetGeometry().GetSize()
             ws=(im.GetSize()[0]+120,im.GetSize()[1]+200)
             if ws[0]<ds[0] and ws[1]<ds[1]:
                 winsize=ws
@@ -618,7 +718,7 @@ class MyFrame(wx.Frame):
             self.scp.im.SetBitmap(wx.BitmapFromImage(im))
             self.scp.im.points=[]
             self.scp.im.axes=[]
-            self.frameMinMaxContr.SetValue("%d,%d"%(0,self.parameters['frames']))
+            self.frameMinMaxContr.SetValue("%d,%d"%self.parameters['framelim'])
             if os.path.exists(self.movie.datadir+'paras.txt'): self.ReadParasFromFile(filename=self.movie.datadir+'paras.txt')
             f = self.sb.GetFont()
             dc = wx.WindowDC(self.sb)
@@ -654,7 +754,8 @@ class MyFrame(wx.Frame):
                 im.SetData(image.tostring())
             if type(image).__name__=='str':
                 im=wx.Image(image)
-            ds=wx.GetDisplaySize()
+            #ds=wx.GetDisplaySize()
+            ds=wx.Display(0).GetGeometry().GetSize()
             ws=(int(im.GetSize()[0]*sc+300),int(im.GetSize()[1]*sc+200))
             self.SetSize((min(ws[0],ds[0]),min(ws[1],ds[1])))
             im.Rescale(im.GetSize()[0]*sc,im.GetSize()[1]*sc)
@@ -673,8 +774,8 @@ class MyFrame(wx.Frame):
                     im=np.array(Image.open(self.movie.datadir+'mask.png'))
                     if len(im.shape)==3: im=im[:,:,self.parameters['channel']]
                     mask=(im>0).astype(float)
-                except: mask=np.zeros(self.movie.shape[::-1])+1.
-            else: mask=np.zeros(self.movie.shape[::-1])+1.
+                except: mask=np.zeros(self.movie.parameters['imsize'][::-1])+1.
+            else: mask=np.zeros(self.movie.parameters['imsize'][::-1])+1.
             self.images['Mask']=mask.astype(np.uint8)*255
             for item in self.rImstate:
                 if item.GetValue(): self.imType=item.GetLabelText()
@@ -686,7 +787,7 @@ class MyFrame(wx.Frame):
                         self.sb.SetStatusText('Working... Extracting background', 1)
                         s=self.BGrngContr.GetValue() #text field
                         BGrng=(int(s.split(',')[0]),int(s.split(',')[1]))
-                        num=int(1.e8/(self.movie.shape[0]*self.movie.shape[1]))
+                        num=int(1.e8/(self.movie.parameters['imsize'][0]*self.movie.parameters['imsize'][1]))
                         if num<10: num=10
                         if num>50: num=50
                         print num
@@ -698,13 +799,13 @@ class MyFrame(wx.Frame):
                 if type(self.images['Original']).__name__!='ndarray':
                     image=self.movie.getFrame(self.framenum)
                     self.images['Original']=image.copy()
-                else: image=self.images['Original']
+                else: image=self.images['Original'].copy()
                 if len(image.shape)>2:
                     image=image[:,:,self.parameters['channel']]
                     self.images['Single channel'] = image.copy()
                 bgsub=image.astype(float)-self.movie.bg
                 self.images['BG treated']=rt.mxContr(bgsub)*mask+255*(1-mask)
-                thresh=rt.mxContr((self.images['BG treated']<self.parameters['thresh']).astype(int))
+                thresh=rt.mxContr((self.images['BG treated']<self.parameters['threshold']).astype(int))
                 if self.parameters['struct']>0:
                     thresh=cv2.morphologyEx(thresh, cv2.MORPH_OPEN, self.kernel)
                 if self.invCheck.GetValue(): thresh=255-thresh
@@ -712,7 +813,7 @@ class MyFrame(wx.Frame):
                 #contours, hierarchy=cv2.findContours(thresh,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
                 self.images['Particles']=self.images['Original'].copy()
                 if self.imType=='Particles':
-                    blobs,contours=rt.extract_blobs(thresh, -1, self.parameters['size'], self.parameters['sphericity'], diskfit=True,returnCont=True, outpSpac=1) #TODO:why is diskfit hardcoded to True?
+                    blobs,contours=rt.extract_blobs(thresh, -1, self.parameters['blobsize'], self.parameters['sphericity'], diskfit=True,returnCont=True, outpSpac=1) #TODO:why is diskfit hardcoded to True?
                     for b in range(len(blobs)):
                         if blobs[b][-2]==0:
                             if self.diskfitCheck.GetValue(): cv2.circle(self.images['Particles'],(np.int32(blobs[b][3]),np.int32(blobs[b][4])),np.int32(np.sqrt(blobs[b][2]/np.pi)),(255,120,0),2)
@@ -726,8 +827,8 @@ class MyFrame(wx.Frame):
                                 cv2.drawContours(self.images['Particles'],[contours[b]],-1,(0,255,120),2)
                     contcount=blobs.shape[0]
                     if self.sizeCheck.GetValue():
-                        r1=np.ceil(np.sqrt(self.parameters['size'][0]/np.pi))
-                        r2=np.ceil(np.sqrt(self.parameters['size'][1]/np.pi))
+                        r1=np.ceil(np.sqrt(self.parameters['blobsize'][0]/np.pi))
+                        r2=np.ceil(np.sqrt(self.parameters['blobsize'][1]/np.pi))
                         cv2.circle(self.images['Particles'],(np.int32(r2+5),np.int32(r2+5)),np.int32(r1),(255,0,0),-1)
                         cv2.circle(self.images['Particles'],(np.int32(3*r2+10),np.int32(r2+5)),np.int32(r2),(255,0,0),-1)
                     self.sb.SetStatusText("%d particles"%contcount, 0)
@@ -743,22 +844,22 @@ class MyFrame(wx.Frame):
                     im=np.array(Image.open(self.movie.datadir+'mask.png'))
                     if len(im.shape)==3: im=im[:,:,self.parameters['channel']]
                     mask=(im>0).astype(float)
-                except: mask=np.zeros(self.movie.shape[::-1])+1.
-            else: mask=np.zeros(self.movie.shape[::-1])+1.
+                except: mask=np.zeros(self.movie.parameters['imsize'][::-1])+1.
+            else: mask=np.zeros(self.movie.parameters['imsize'][::-1])+1.
             self.images['Mask']=mask.astype(np.uint8)*255
             for item in self.cImstate:
                 if item.GetValue(): self.imType=item.GetLabelText()
             if type(self.images['Original']).__name__!='ndarray':
                 image=self.movie.getFrame(self.framenum)
                 self.images['Original']=image.copy()
-            else: image=self.images['Original']
+            else: image=self.images['Original'].copy()
             if len(image.shape)>2:
                 image=image[:,:,self.parameters['channel']]
                 self.images['Single channel'] = image.copy()
             blur=rt.mxContr(image.copy())*mask+255*(1-mask)
             blur=cv2.GaussianBlur(blur,(self.parameters['blur'],self.parameters['blur']),0)
             self.images['Blur']=blur.copy()
-            thresh=rt.mxContr((blur<self.parameters['thresh']).astype(int))
+            thresh=rt.mxContr((blur<self.parameters['threshold']).astype(int))
             if self.invCheck.GetValue(): thresh=255-thresh
             if self.parameters['struct']>0:
                 thresh=cv2.morphologyEx(thresh, cv2.MORPH_OPEN, self.kernel)
@@ -767,7 +868,7 @@ class MyFrame(wx.Frame):
             self.images['Clusters']=self.images['Original'].copy()
             self.images['Voronoi']=self.images['Original'].copy()
             if self.imType=='Clusters':
-                blobs,contours=rt.extract_blobs(thresh, -1, self.parameters['size'], -1, diskfit=False,returnCont=True, outpSpac=1)
+                blobs,contours=rt.extract_blobs(thresh, -1, self.parameters['blobsize'], -1, diskfit=False,returnCont=True, outpSpac=1)
                 count = 0
                 contcount=blobs.shape[0]
                 if self.clustNumCheck.GetValue() and contcount>0:
@@ -780,12 +881,12 @@ class MyFrame(wx.Frame):
                 contcount=blobs.shape[0]
                 self.sb.SetStatusText("%d clusters"%contcount, 0)
                 if self.sizeCheck.GetValue():
-                    r1=np.ceil(np.sqrt(self.parameters['size'][0]/np.pi))
-                    r2=np.ceil(np.sqrt(self.parameters['size'][1]/np.pi))
+                    r1=np.ceil(np.sqrt(self.parameters['blobsize'][0]/np.pi))
+                    r2=np.ceil(np.sqrt(self.parameters['blobsize'][1]/np.pi))
                     cv2.circle(self.images['Clusters'],(np.int32(r2+5),np.int32(r2+5)),np.int32(r1),(255,0,0),-1)
                     cv2.circle(self.images['Clusters'],(np.int32(3*r2+10),np.int32(r2+5)),np.int32(r2),(255,0,0),-1)
             if self.imType=='Voronoi' and rt.vorflag:
-                blobs=rt.extract_blobs(thresh, -1, self.parameters['size'], -1, diskfit=False,returnCont=False, outpSpac=1)
+                blobs=rt.extract_blobs(thresh, -1, self.parameters['blobsize'], -1, diskfit=False,returnCont=False, outpSpac=1)
                 if blobs.shape[0]>1:
                     vor=rt.Voronoi(blobs[:,3:5])
                     outind=[-1]
@@ -800,7 +901,7 @@ class MyFrame(wx.Frame):
                                 if j in r: flag=False
                             if flag:
                                 col=tuple([int(255*c) for c in cm.jet(i*255/len(vor.points))])
-                                print col
+                                #print col
                                 pl.plot(vor.vertices[r,1],vor.vertices[r,0], c=col)
                                 cv2.polylines(self.images['Voronoi'], [(vor.vertices[r]).astype(np.int32)], True, col, 2)
             self.scp.im.Redraw()
@@ -814,39 +915,42 @@ class MyFrame(wx.Frame):
             for item in self.sImstate:
                 if item.GetValue(): self.imType=item.GetLabelText()
             image=self.movie.getFrame(self.framenum)
-            print self.movie.crop
+            #print self.movie.crop
             if type(image).__name__=='ndarray':
-                if image.shape[:2]!=(self.movie.crop[2]-self.movie.crop[0],self.movie.crop[3]-self.movie.crop[1]):
-                    if len(image.shape)==2: image=image[self.movie.crop[0]:self.movie.crop[2],self.movie.crop[1]:self.movie.crop[3]]
-                    if len(image.shape)==3: image=image[self.movie.crop[0]:self.movie.crop[2],self.movie.crop[1]:self.movie.crop[3],:]
+                if image.shape[:2]!=(self.movie.parameters['crop'][2]-self.movie.parameters['crop'][0],self.movie.parameters['crop'][3]-self.movie.parameters['crop'][1]):
+                    if len(image.shape)==2: image=image[self.movie.parameters['crop'][0]:self.movie.parameters['crop'][2],self.movie.parameters['crop'][1]:self.movie.parameters['crop'][3]]
+                    if len(image.shape)==3: image=image[self.movie.parameters['crop'][0]:self.movie.parameters['crop'][2],self.movie.parameters['crop'][1]:self.movie.parameters['crop'][3],:]
                     self.images['Original']=image.copy()
                 if len(image.shape)>2:
                     image=image[:,:,self.parameters['channel']]
                 print image.shape, len(image.shape)
                 self.images['Single channel'] = image.copy()
-                thresh=rt.mxContr((self.images['Single channel']<self.parameters['thresh']).astype(int))
+                thresh=rt.mxContr((self.images['Single channel']<self.parameters['threshold']).astype(int))
                 if self.parameters['struct']>0:
                     thresh=cv2.morphologyEx(thresh, cv2.MORPH_OPEN, self.kernel)
                 if self.invCheck.GetValue(): thresh=255-thresh
                 self.images['Threshold']=thresh.copy()
                 self.images['Particles']=self.images['Original'].copy()
                 if self.imType=='Particles':
-                    blobs,contours=rt.extract_blobs(thresh, -1, self.parameters['size'], self.parameters['sphericity'], diskfit=True,returnCont=True, outpSpac=1)
+		    if np.amin(thresh)!=np.amax(thresh): blobs,contours=rt.extract_blobs(thresh, -1, self.parameters['blobsize'], self.parameters['sphericity'], diskfit=True,returnCont=True, outpSpac=1)
+		    else: blobs,contours=np.array([]).reshape(0,8),[]
                     for b in range(len(blobs)):
                         if blobs[b][-2]==0:
-                            if self.diskfitCheck.GetValue(): cv2.circle(self.images['Particles'],(np.int32(blobs[b][3]),np.int32(blobs[b][4])),np.int32(np.sqrt(blobs[b][2]/np.pi)),(255,120,0),2)
+                            if self.diskfitCheck.GetValue(): 
+                                cv2.circle(self.images['Particles'],(np.int32(blobs[b][3]),np.int32(blobs[b][4])),np.int32(np.sqrt(blobs[b][2]/np.pi)),(255,120,0),2)
                             else:
-                                print contours[b]
+                                #print contours[b]
                                 cv2.drawContours(self.images['Particles'],[contours[b]],-1,(0,255,120),2)
                         else:
-                            if self.diskfitCheck.GetValue(): cv2.circle(self.images['Particles'],(np.int32(blobs[b][3]),np.int32(blobs[b][4])),np.int32(np.sqrt(blobs[b][2]/np.pi)),(0,255,120),2)
+                            if self.diskfitCheck.GetValue(): 
+                                cv2.circle(self.images['Particles'],(np.int32(blobs[b][3]),np.int32(blobs[b][4])),np.int32(np.sqrt(blobs[b][2]/np.pi)),(0,255,120),2)
                             else:
-                                print contours[b]
+                                #print contours[b]
                                 cv2.drawContours(self.images['Particles'],[contours[b]],-1,(0,255,120),2)
                     contcount=blobs.shape[0]
                     if self.sizeCheck.GetValue():
-                        r1=np.ceil(np.sqrt(self.parameters['size'][0]/np.pi))
-                        r2=np.ceil(np.sqrt(self.parameters['size'][1]/np.pi))
+                        r1=np.ceil(np.sqrt(self.parameters['blobsize'][0]/np.pi))
+                        r2=np.ceil(np.sqrt(self.parameters['blobsize'][1]/np.pi))
                         cv2.circle(self.images['Particles'],(np.int32(r2+5),np.int32(r2+5)),np.int32(r1),(255,0,0),-1)
                         cv2.circle(self.images['Particles'],(np.int32(3*r2+10),np.int32(r2+5)),np.int32(r2),(255,0,0),-1)
                     self.sb.SetStatusText("%d particles"%contcount, 0)
@@ -865,7 +969,7 @@ class MyFrame(wx.Frame):
         evID=event.GetId()
         if evID==200: #binary threshold
             thresh=int(self.threshContr.GetValue())
-            if 0<=thresh<=255: self.parameters['thresh']=thresh
+            if 0<=thresh<=255: self.parameters['threshold']=thresh
         if evID==201: #structuring element size
             self.parameters['struct']=int(self.strContr.GetValue())
             if self.parameters['struct']>0: self.kernel= cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(self.parameters['struct'],self.parameters['struct']))
@@ -877,7 +981,7 @@ class MyFrame(wx.Frame):
         if evID==205: self.framenum=int(self.frameContr.GetValue()) #text field
         if evID==206:
             s=self.psizeContr.GetValue() #text field
-            self.parameters['size']=(int(s.split(',')[0]),int(s.split(',')[1]))
+            self.parameters['blobsize']=(int(s.split(',')[0]),int(s.split(',')[1]))
         if evID==207: self.parameters['channel']=int(self.channelCB.GetValue())
         if evID==208: self.parameters['sphericity']=float(self.sphericityContr.GetValue())
         if evID==209:
@@ -885,18 +989,25 @@ class MyFrame(wx.Frame):
             if self.parameters['blur']%2==0: self.parameters['blur']+=1
         if evID==210:
             self.parameters['spacing']=int(self.frameSpacContr.GetValue())
+        if evID in range(211,215):
+            self.parameters['sizepreview']=self.sizeCheck.GetValue()
+            self.parameters['mask']=self.maskCheck.GetValue()
+            self.parameters['invert']=self.invCheck.GetValue()
+            self.parameters['diskfit']=self.diskfitCheck.GetValue()
         if evID==651:
             if self.movie.typ=="3D stack":
-                try: self.movie.crop=[int(i) for i in self.stCropContr.GetValue().split(',')]
+                try: 
+		  self.movie.parameters['crop']=[int(i) for i in self.stCropContr.GetValue().split(',')]
+		  self.parameters['crop']=self.movie.parameters['crop']
                 except: raise
         self.frameContr.SetValue(str(self.framenum))
         self.frameSpacContr.SetValue(str(self.parameters['spacing']))
         self.frameSldr.SetValue(self.framenum)
         self.strContr.SetValue(str(self.parameters['struct']))
-        self.threshContr.SetValue(str(self.parameters['thresh']))
+        self.threshContr.SetValue(str(self.parameters['threshold']))
         self.sphericityContr.SetValue(str(self.parameters['sphericity']))
         self.blurContr.SetValue(str(self.parameters['blur']))
-        if self.movie.typ=="3D stack": self.stCropContr.SetValue(str(self.movie.crop)[1:-1])
+        if self.movie.typ=="3D stack": self.stCropContr.SetValue(str(self.movie.parameters['crop'])[1:-1])
         self.images['Original']=self.movie.getFrame(self.framenum)
         try: self.infoWin.Update()
         except AttributeError:
@@ -924,23 +1035,30 @@ class MyFrame(wx.Frame):
             text=text.split('\n')
             for t in text:
                 t=t.split(': ')
-                if t[0].strip() in ['struct','thresh','frames', 'channel','blur','spacing']:#integer parameters
+                if t[0].strip() in ['struct','threshold','frames', 'channel','blur','spacing']:#integer parameters
                     self.parameters[t[0]]=int(t[1])
-                if t[0].strip() in ['size','imsize']:#tuple parameters
+                if t[0].strip() in ['blobsize','imsize', 'crop', 'framelim']:#tuple parameters
                     tsplit=t[1][1:-1].split(',')
-                    self.parameters[t[0]]=(int(tsplit[0]),int(tsplit[1]))
+                    self.parameters[t[0]]=tuple([int(it) for it in tsplit])
                 if t[0].strip() in ['framerate','sphericity']:#float parameters
                     self.parameters[t[0]]=float(t[1])
                 if t[0].strip() == 'channel':
                     self.channelCB.SetValue(t[1].strip())
+                if t[0].strip() in ['sizepreview','mask','diskfit','invert']:#float parameters
+                    self.parameters[t[0]]=rt.str_to_bool(t[1])
             self.strContr.SetValue(str(self.parameters['struct']))
             if self.parameters['struct']>0: self.kernel= cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(self.parameters['struct'],self.parameters['struct']))
             else: self.kernel=False
-            self.threshContr.SetValue(str(self.parameters['thresh']))
-            self.psizeContr.SetValue(str(self.parameters['size']).replace(' ','')[1:-1])
+            self.threshContr.SetValue(str(self.parameters['threshold']))
+            self.psizeContr.SetValue(str(self.parameters['blobsize']).replace(' ','')[1:-1])
             self.sphericityContr.SetValue("%.2f"%self.parameters['sphericity'])
             self.blurContr.SetValue("%d"%self.parameters['blur'])
             self.frameSpacContr.SetValue("%d"%self.parameters['spacing'])
+            self.stCropContr.SetValue(str(self.parameters['crop']).replace(' ','')[1:-1])
+            self.maskCheck.SetValue(self.parameters['mask'])
+            self.diskfitCheck.SetValue(self.parameters['diskfit'])
+            self.sizeCheck.SetValue(self.parameters['sizepreview'])
+            self.invCheck.SetValue(self.parameters['invert'])
             self.ShowParas()
         except:
             print "Ooops... Try a different file?"
@@ -952,13 +1070,15 @@ class MyFrame(wx.Frame):
         self.sb.SetStatusText("Working... Running coordinate analysis",1)
         try:
             lim=self.frameMinMaxContr.GetValue()
-            framelim=(int(lim.split(',')[0]),int(lim.split(',')[1]))
+            self.parameters['framelim']=(int(lim.split(',')[0]),int(lim.split(',')[1]))
         except:
-            framelim=(0,self.parameters['frames'])
-        if self.maskCheck.GetValue(): mask=self.movie.datadir+'mask.png'
+            pass
+        if self.maskCheck.GetValue(): 
+	  try: mask=self.movie.datadir+'mask.png'
+	  except: mask=False
         else: mask=False
         self.parameters['channel']=int(self.channelCB.GetValue())
-        self.movie.extractCoords(framelim=framelim, blobsize=self.parameters['size'], threshold=self.parameters['thresh'],kernel=self.kernel, delete=True, mask=mask,channel=self.parameters['channel'], sphericity=self.parameters['sphericity'],diskfit=self.diskfitCheck.GetValue())
+        self.movie.extractCoords(framelim=self.parameters['framelim'], blobsize=self.parameters['blobsize'], threshold=self.parameters['threshold'],kernel=self.kernel, delete=True, mask=mask,channel=self.parameters['channel'], sphericity=self.parameters['sphericity'],diskfit=self.diskfitCheck.GetValue(), crop=self.parameters['crop'], invert=self.invCheck.GetValue())
         self.sb.SetStatusText(self.moviefile, 1)
         self.getCoordB.Enable()
 
@@ -968,13 +1088,13 @@ class MyFrame(wx.Frame):
         self.sb.SetStatusText("Working... Running coordinate analysis",1)
         try:
             lim=self.frameMinMaxContr.GetValue()
-            framelim=(int(lim.split(',')[0]),int(lim.split(',')[1]))
+            self.parameters['framelim']=(int(lim.split(',')[0]),int(lim.split(',')[1]))
         except:
-            framelim=(0,self.parameters['frames'])
+            pass
         if self.maskCheck.GetValue(): mask=self.movie.datadir+'mask.png'
         else: mask=False
         self.parameters['channel']=int(self.channelCB.GetValue())
-        self.movie.getClusters(thresh=self.parameters['thresh'],gkern=self.parameters['blur'],clsize=self.parameters['size'],channel=self.parameters['channel'],rng=framelim,spacing=self.parameters['spacing'], maskfile=self.movie.datadir+'mask.png')
+        self.movie.getClusters(thresh=self.parameters['threshold'],gkern=self.parameters['blur'],clsize=self.parameters['blobsize'],channel=self.parameters['channel'],rng=self.parameters['framelim'],spacing=self.parameters['spacing'], maskfile=self.movie.datadir+'mask.png')
         self.sb.SetStatusText(self.moviefile, 1)
         self.getCluB.Enable()
         
@@ -999,13 +1119,13 @@ class MyFrame(wx.Frame):
         self.sb.SetStatusText("Working... Running trajectory analysis",1)
         try:
             lim=self.frameMinMaxContr.GetValue()
-            framelim=(int(lim.split(',')[0]),int(lim.split(',')[1]))
+            self.parameters['framelim']=(int(lim.split(',')[0]),int(lim.split(',')[1]))
         except:
-            framelim=(0,self.parameters['frames'])
+            pass
         if self.maskCheck.GetValue(): mask=self.movie.datadir+'mask.png'
         else: mask=False
         self.parameters['channel']=int(self.channelCB.GetValue())
-        self.movie.findTrajectories(framelim=framelim, blobsize=self.parameters['size'], threshold=self.parameters['thresh'],kernel=self.kernel, delete=True, invert=self.invCheck.GetValue(), mask=mask,channel=self.parameters['channel'], sphericity=self.parameters['sphericity'],diskfit=self.diskfitCheck.GetValue())
+        self.movie.findTrajectories(framelim=self.parameters['framelim'], blobsize=self.parameters['blobsize'], threshold=self.parameters['threshold'],kernel=self.kernel, delete=True, invert=self.invCheck.GetValue(), mask=mask,channel=self.parameters['channel'], sphericity=self.parameters['sphericity'],diskfit=self.diskfitCheck.GetValue())
         self.sb.SetStatusText(self.moviefile, 1)
         self.getTrajB.Enable()
 
@@ -1020,9 +1140,15 @@ class MyFrame(wx.Frame):
         
     def ResetCrop(self,event):
         if self.movie.typ=='3D stack':
-            self.movie.crop=[0,0,self.movie.shape[0],self.movie.shape[1]]
-            self.stCropContr.SetValue(str(self.movie.crop)[1:-1])
+            self.movie.parameters['crop']=[0,0,self.movie.parameters['imsize'][0],self.movie.parameters['imsize'][1]]
+            self.parameters['crop']=self.movie.parameters['crop']
+            self.stCropContr.SetValue(str(self.movie.parameters['crop'])[1:-1])
             self.StImgDisplay()
+            
+    def PlotStack(self,event):
+        self.stackwin=StackWin(self)
+        self.stackwin.Show()
+        
 
     def OnClose(self,event):
         self.Destroy()
