@@ -911,7 +911,7 @@ class MyFrame(wx.Frame):
                     vor=rt.Voronoi(pts)
                     for i in range(blobs.shape[0]):
                         r=vor.regions[vor.point_region[i]]
-                        col=tuple([int(255*c) for c in cm.jet(i*255/len(vor.points))])[:3]
+                        col=tuple([int(255*c) for c in cm.jet(i*255/blobs.shape[0])])[:3]
                         cv2.polylines(self.images['Voronoi'], [(vor.vertices[r]).astype(np.int32)], True, col[:3], 2)
             self.scp.im.Redraw()
             try: self.HistoWin.Update(self, self.images[self.imType])

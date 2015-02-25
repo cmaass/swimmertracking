@@ -825,7 +825,7 @@ class clusterMovie(movie):
                             if -1 not in r: 
                                 blobs[i,-1]=PolygonArea(vor.vertices[r])
                                 if framenum%(spacing*imgspacing)==0 and imgspacing>0:
-                                    col=tuple([int(255*c) for c in cm.jet(i*255/len(vor.points))])[:3]
+                                    col=tuple([int(255*c) for c in cm.jet(i*255/blobs.shape[0])])[:3]
                                     cv2.polylines(vorIm, [(vor.vertices[r]).astype(np.int32)], True, col[:3], 2)
                                     cv2.circle(vorIm, (int(blobs[i,3]),int(blobs[i,4])),5,(255,0,0),-1)
                                 if framenum%(spacing*imgspacing)==0 and imgspacing!=-1: 
