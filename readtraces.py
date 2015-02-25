@@ -365,7 +365,7 @@ class movie():
             print pos
             if pos == position:
                 mov.release()
-                return success,image
+                return success,image,pos
                 if pos > position:
                     positiontoset -= 1
                     mov.set(cv2.cv.CV_CAP_PROP_POS_FRAMES, positiontoset)
