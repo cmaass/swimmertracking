@@ -31,7 +31,7 @@ from sys import exc_info
 
 
 #this directory definition is changed in the source code at runtime which is probably a really bad idea but good for portability
-moviedir='/media/cmdata/datagoe/gunnar/Polyacryl2/'#end
+moviedir='/media/cmdata/datagoe/gunnar/acrylamide-140209/'#end
 
 def GetBitmap(width=1, height=1, colour = (0,0,0) ):
     """Helper funcion to generate a wxBitmap of defined size and colour.
@@ -194,14 +194,26 @@ class MyImage(wx.StaticBitmap):
         self.savept=(0,0)
 
     def OnLeftDown(self,event):
-        pt=event.GetPosition()
-        pt=self.parent.CalcUnscrolledPosition(pt)
-        self.savestatus=self.pparent.sb.GetStatusText(0)
-        if len(self.pparent.images[self.pparent.imType].shape)==2:
-            RGB=", grey %d"%self.pparent.images[self.pparent.imType][pt[1],pt[0]]
+        ctrlstate=wx.GetKeyState(wx.WXK_CONTROL)
+        if not ctrlstate:
+            pt=event.GetPosition()
+            pt=self.parent.CalcUnscrolledPosition(pt)
+            self.savestatus=self.pparent.sb.GetStatusText(0)
+            if len(self.pparent.images[self.pparent.imType].shape)==2:
+                RGB=", grey %d"%self.pparent.images[self.pparent.imType][pt[1],pt[0]]
+            else:
+                RGB=", RGB (%d,%d,%d)"%tuple(self.pparent.images[self.pparent.imType][pt[1],pt[0],:])
+            self.pparent.sb.SetStatusText("x %d, y %d"%(pt.x/self.scale,pt.y/self.scale)+RGB, 0)
         else:
-            RGB=", RGB (%d,%d,%d)"%tuple(self.pparent.images[self.pparent.imType][pt[1],pt[0],:])
-        self.pparent.sb.SetStatusText("x %d, y %d"%(pt.x/self.scale,pt.y/self.scale)+RGB, 0)
+            pt=event.GetPosition()
+            pt=self.parent.CalcUnscrolledPosition(pt)
+            self.savestatus=self.pparent.sb.GetStatusText(0)
+            if len(self.pparent.images[self.pparent.imType].shape)==2:
+                RGB=", grey %d"%self.pparent.images[self.pparent.imType][pt[1],pt[0]]
+            else:
+                RGB=", RGB (%d,%d,%d)"%tuple(self.pparent.images[self.pparent.imType][pt[1],pt[0],:])
+            self.pparent.sb.SetStatusText("x %d, y %d with control"%(pt.x/self.scale,pt.y/self.scale)+RGB, 0)
+                        
 
     def OnLeftUp(self,event):
         self.pparent.sb.SetStatusText(self.savestatus, 0)
@@ -924,12 +936,14 @@ class MyFrame(wx.Frame):
 		    else: blobs,contours=np.array([]).reshape(0,8),[]
                     for b in range(len(blobs)):
                         if blobs[b][-2]==0:
-                            if self.diskfitCheck.GetValue(): cv2.circle(self.images['Particles'],(np.int32(blobs[b][3]),np.int32(blobs[b][4])),np.int32(np.sqrt(blobs[b][2]/np.pi)),(255,120,0),2)
+                            if self.diskfitCheck.GetValue(): 
+                                cv2.circle(self.images['Particles'],(np.int32(blobs[b][3]),np.int32(blobs[b][4])),np.int32(np.sqrt(blobs[b][2]/np.pi)),(255,120,0),2)
                             else:
                                 #print contours[b]
                                 cv2.drawContours(self.images['Particles'],[contours[b]],-1,(0,255,120),2)
                         else:
-                            if self.diskfitCheck.GetValue(): cv2.circle(self.images['Particles'],(np.int32(blobs[b][3]),np.int32(blobs[b][4])),np.int32(np.sqrt(blobs[b][2]/np.pi)),(0,255,120),2)
+                            if self.diskfitCheck.GetValue(): 
+                                cv2.circle(self.images['Particles'],(np.int32(blobs[b][3]),np.int32(blobs[b][4])),np.int32(np.sqrt(blobs[b][2]/np.pi)),(0,255,120),2)
                             else:
                                 #print contours[b]
                                 cv2.drawContours(self.images['Particles'],[contours[b]],-1,(0,255,120),2)

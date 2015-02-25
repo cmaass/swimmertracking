@@ -80,7 +80,7 @@ class trajectory():
                     self.opened=False #close trajectory, don't remove particle from coordinate array.
                 else:
                     predCoord=lin_traj(self.data[-lossmargin:,2],self.data[-lossmargin:,3])
-                    if np.isnan(predCoord[0]): predCoord=self.data[-1][:-1]
+                    if np.isnan(predCoord[0]): predCoord=self.data[-1][2:4]
                     self.data=np.vstack((self.data,np.array([[frame, -1, predCoord[0], predCoord[1], self.data[-1,-1]]])))
                 return nxt
             self.lossCnt=0
@@ -91,7 +91,7 @@ class trajectory():
                 self.opened=False #close trajectory, don't remove particle from coordinate array.
             else:
                 predCoord=lin_traj(self.data[-lossmargin:,2],self.data[-lossmargin:,3])
-                if np.isnan(predCoord[0]): predCoord=self.data[-1][:-1]
+                if np.isnan(predCoord[0]): predCoord=self.data[-1][2:4]
                 self.data=np.vstack((self.data,np.array([[frame, -1,predCoord[0], predCoord[1],self.data[-1,-1]]])))
             return nxt
 
@@ -198,7 +198,7 @@ class movie():
         cur.close()
         db.close()
         
-    def extractCoords(self,framelim=False, blobsize=False, threshold=False, kernel=False, delete=False, mask=False, channel=0, sphericity=-1, diskfit=True, blur=1,crop=False):
+    def extractCoords(self,framelim=False, blobsize=False, threshold=False, kernel=False, delete=False, mask=False, channel=0, sphericity=-1, diskfit=True, blur=1,crop=False, invert=False):
         if not framelim: framelim=self.parameters['framelim']
         if not blobsize: blobsize=self.parameters['blobsize']
         if not threshold: threshold=self.parameters['threshold']
@@ -244,14 +244,14 @@ class movie():
                 im=mxContr(im) #TODO: this might be a few rescalings too many. try to make this simpler, but make it work first
                 thresh=mxContr((im<threshold).astype(int))
                 if type(kernel).__name__=='ndarray': thresh=cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
-                if amax(thresh)!=amin(thresh): blobs=extract_blobs(thresh,framenum,sphericity=sphericity,blobsize=blobsize,diskfit=diskfit)
+                if np.amax(thresh)!=np.amin(thresh): blobs=extract_blobs(thresh,framenum,sphericity=sphericity,blobsize=blobsize,diskfit=diskfit)
                 else: blobs=np.array([]).reshape(0,8)
                 counter=blobs.shape[0]
                 try: allblobs=np.vstack((allblobs,blobs))
                 except ValueError:
                     pass
                     #print "Value Error!", allblobs.shape, blobs.shape
-                    np.savetxt(dumpfile,allblobs,fmt="%.2f")
+        np.savetxt(dumpfile,allblobs,fmt="%.2f")
         dumpfile.close()
         with open(self.datadir+'temp','r') as f: tempdata=f.read()[:-1]
         with open(self.datadir+'temp','w') as f: f.write(tempdata)
@@ -464,7 +464,7 @@ class movie():
                 thresh=mxContr((im<threshold).astype(int))
                 if type(kernel).__name__=='ndarray': thresh=cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
                 if invert: thresh=255-thresh
-                if amax(thresh)!=amin(thresh): blobs=extract_blobs(thresh,framenum,blobsize=blobsize,sphericity=sphericity, outpSpac=outpSpac, diskfit=diskfit)
+                if np.amax(thresh)!=np.amin(thresh): blobs=extract_blobs(thresh,framenum,blobsize=blobsize,sphericity=sphericity, outpSpac=outpSpac, diskfit=diskfit)
                 else: blobs=np.array([]).reshape(0,8)
                 if framenum>framelim[0]:
                     for tr in activetrajectories.values():
@@ -493,10 +493,12 @@ class movie():
         success,image=mov.read()
         if crop[2]==0: crop[2]=-image.shape[0]
         if crop[3]==0: crop[3]=-image.shape[1]
-        image=image[:,:,channel][crop[0]:-crop[2],crop[1]:-crop[3]]
-        print image.shape
+        test=image[:,:,channel]
+        image=np.dstack((test,test,test))
+        test=test.copy()[crop[0]:-crop[2],crop[1]:-crop[3]]
+        print test.shape
         print crop
-        size=(int(image.shape[0]/scale),int(image.shape[1]/scale))
+        size=(int(test.shape[0]/scale),int(test.shape[1]/scale))
         print size
         out=cv2.VideoWriter(outname,cv2.cv.CV_FOURCC('D','I','V','X'),frate,(size[1],size[0]))
         count=0.
@@ -505,20 +507,22 @@ class movie():
             for ob in glob(self.datadir+mask+'*.txt'):
                 tr=np.loadtxt(ob)
                 #tr[:,0]=np.around(tr[:,0]/tr[0,0])
-                if tr.shape[0]>lenlim: trajectories+=[tr]
+                if tr.shape[0]>lenlim: 
+		  trajectories+=[tr]
+		  print tr.shape
         print '# of trajectories', len(trajectories)
         while success:
             if (bounds[0] <= count <= bounds[1]) and count%decim==0:
                 for i in range(len(trajectories)):
                     if trajectories[i][-1,0]<count:
-                        pts = trajectories[i][:,1:3].astype(np.int32) #check indices and shape!!!
+                        pts = trajectories[i][:,2:4].astype(np.int32) #check indices and shape!!!
                         colour=tuple([int(255*r) for r in cmap(np.float(i)/len(trajectories))[:3]])[::-1]
                         #colour=(0,120,0)
                         cv2.polylines(image,[pts],isClosed=False,color=colour,thickness=int(np.round(scale)))
                     else:
                         w=(trajectories[i][:,0]==count).nonzero()[0]
                         if len(w)>0:
-                            pts = trajectories[i][:w[0],1:3].astype(np.int32) #check indices and shape!!!
+                            pts = trajectories[i][:w[0],2:4].astype(np.int32) #check indices and shape!!!
                             colour=tuple([int(255*r) for r in cmap(np.float(i)/len(trajectories))[:3]])[::-1]
                             cv2.polylines(image,[pts],isClosed=False,color=colour,thickness=int(np.round(scale)))
                             if christmas:
@@ -526,12 +530,17 @@ class movie():
                                 except: pass
                 image=image[crop[0]:-crop[2],crop[1]:-crop[3]]
                 outim=imresize(image,1./scale)
-                if count%1000==0: Image.fromarray(outim).save(self.datadir+'testim%06d.png'%count)
-                out.write(outim)
+                if count%min(self.parameters['framelim'][1]/10,1000)==0: Image.fromarray(outim).save(self.datadir+'testim%06d.png'%count)
+                out.write(outim[:,:,::-1])
             success,image=mov.read()
+            if success:
+	      image=image[:,:,channel]
+	      image=np.dstack((image,image,image))
             count+=1
-            if count%1000==0: print count
-            if count > bounds[1]: success=False
+            if count%min(self.parameters['framelim'][1]/10,1000)==0: print count
+            if count > bounds[1]: 
+	      success=False
+        Image.fromarray(outim).save(self.datadir+'testim%06d.png'%count)
         mov.release()
         #out.release()
 
