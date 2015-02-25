@@ -523,7 +523,7 @@ class MyFrame(wx.Frame):
         self.parameters={
             'framerate':0.,'sphericity':-1.0,
             'imsize':(0,0),'blobsize':(5,90),'crop':[0]*4, 'framelim':(0,0), 'circle':[0,0,1e4],
-            'frames':0,  'threshold':120, 'struct':5,  'channel':0, 'blur':1,'spacing':1,
+            'frames':0,  'threshold':120, 'struct':5,  'channel':0, 'blur':1,'spacing':1, 'imgspacing':-1,
             'sizepreview':True, 'invert':False, 'diskfit':False, 'mask':True
         }
         #erosion/dilation kernel. basically, a circle of radius "struct" as a numpy array.
@@ -546,6 +546,7 @@ class MyFrame(wx.Frame):
     def SaveParas(self,event):
         """saves """
         if self.movie.typ!='none':
+            self.ShowParas()
             if not os.path.exists(self.movie.datadir): os.mkdir(self.movie.datadir)
             try:
                 with open(self.movie.datadir+'paras.txt','w') as f: f.write(self.infoWin.infotext)
@@ -735,6 +736,7 @@ class MyFrame(wx.Frame):
             self.infoWin=InfoWin(self)
             self.infoWin.Show()
             self.infoWin.Update(text)
+        self.infoWin.Raise()
 
 
     def ShowHistogram(self,event):
@@ -743,6 +745,7 @@ class MyFrame(wx.Frame):
         except AttributeError:
             self.HistoWin=HistoWin(self, self.images[self.imType])
             self.HistoWin.Show()
+        self.HistoWin.Raise()
 
     def Zoom(self,event=None):
         try:
@@ -1020,6 +1023,7 @@ class MyFrame(wx.Frame):
             self.infoWin=InfoWin(self)
             self.infoWin.Show()
             self.infoWin.Update()
+        self.infoWin.Raise()
         text=self.nb.GetPageText(self.nb.GetSelection())
         if text=='Particles':
             self.ImgDisplay()
@@ -1041,11 +1045,11 @@ class MyFrame(wx.Frame):
             text=text.split('\n')
             for t in text:
                 t=t.split(': ')
-                if t[0].strip() in ['struct','threshold','frames', 'channel','blur','spacing']:#integer parameters
+                if t[0].strip() in ['struct','threshold','frames', 'channel','blur','spacing','imgspacing']:#integer parameters
                     self.parameters[t[0]]=int(t[1])
-                if t[0].strip() in ['blobsize','imsize', 'crop', 'framelim']:#tuple parameters
+                if t[0].strip() in ['blobsize','imsize', 'crop', 'framelim','circle']:#tuple parameters
                     tsplit=t[1][1:-1].split(',')
-                    self.parameters[t[0]]=tuple([int(it) for it in tsplit])
+                    self.parameters[t[0]]=tuple([int(float(it)) for it in tsplit]) #this is a bit of a hack, but strings with dots in them don't convert to int, apparently
                 if t[0].strip() in ['framerate','sphericity']:#float parameters
                     self.parameters[t[0]]=float(t[1])
                 if t[0].strip() == 'channel':
@@ -1069,6 +1073,7 @@ class MyFrame(wx.Frame):
         except:
             print "Ooops... Try a different file?"
             self.sb.SetStatusText("Ooops... Try a different file?",0)
+            raise
 
 
     def GetCoordinates(self,event):
@@ -1100,7 +1105,7 @@ class MyFrame(wx.Frame):
         if self.maskCheck.GetValue(): mask=self.movie.datadir+'mask.png'
         else: mask=False
         self.parameters['channel']=int(self.channelCB.GetValue())
-        self.movie.getClusters(thresh=self.parameters['threshold'],gkern=self.parameters['blur'],clsize=self.parameters['blobsize'],channel=self.parameters['channel'],rng=self.parameters['framelim'],spacing=self.parameters['spacing'], maskfile=self.movie.datadir+'mask.png', circ=self.parameters['circle'])
+        self.movie.getClusters(thresh=self.parameters['threshold'],gkern=self.parameters['blur'],clsize=self.parameters['blobsize'],channel=self.parameters['channel'],rng=self.parameters['framelim'],spacing=self.parameters['spacing'], maskfile=self.movie.datadir+'mask.png', circ=self.parameters['circle'],imgspacing=self.parameters['imgspacing'])
         self.sb.SetStatusText(self.moviefile, 1)
         self.getCluB.Enable()
         
@@ -1154,6 +1159,7 @@ class MyFrame(wx.Frame):
     def PlotStack(self,event):
         self.stackwin=StackWin(self)
         self.stackwin.Show()
+        self.stackwin.Raise()
         
 
     def OnClose(self,event):

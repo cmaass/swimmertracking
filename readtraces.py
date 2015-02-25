@@ -167,9 +167,9 @@ class movie():
         text=text.split('\n')
         for t in text:
           t=t.split(': ')
-          if t[0].strip() in ['struct','threshold','frames', 'channel','blur','spacing']:#integer parameters
+          if t[0].strip() in ['struct','threshold','frames', 'channel','blur','spacing','imgspacing']:#integer parameters
             self.parameters[t[0]]=int(t[1])
-          if t[0].strip() in ['blobsize','imsize', 'crop','framelim']:#tuple parameters
+          if t[0].strip() in ['blobsize','imsize', 'crop','framelim', 'circle']:#tuple parameters
             tsplit=t[1][1:-1].split(',')
             self.parameters[t[0]]=tuple([int(it) for it in tsplit])
           if t[0].strip() in ['framerate','sphericity']:#float parameters
@@ -767,8 +767,9 @@ class clusterMovie(movie):
         self.typ="Clusters"
         self.bg=False
 
-    def getClusters(self,thresh=128,gkern=61,clsize=(1,1e5),channel=0,rng=(1,1e8),spacing=100, maskfile='', circ=[0,0,1e4]):
+    def getClusters(self,thresh=128,gkern=61,clsize=(1,1e5),channel=0,rng=(1,1e8),spacing=100, maskfile='', circ=[0,0,1e4], imgspacing=-1):
         print 'thresh', thresh, 'gkern',gkern, 'clsize', clsize, 'channel', channel, 'rng', rng, 'spacing', spacing, 'mask', maskfile, 'circle',circ
+        
         t0=time()
         if os.path.exists(maskfile):
             mask=np.array(Image.open(maskfile))[:,:,0]
@@ -791,6 +792,7 @@ class clusterMovie(movie):
             success,image=mov.read()
             if not success: break
             if framenum%spacing==0:
+                if imgspacing!=-1: vorIm=image.copy()
                 image=image[:,:,channel]
                 blurIm=(mxContr(image)*mask+255*(1-mask))
                 blurIm=cv2.GaussianBlur(blurIm,(gkern,gkern),0)
@@ -806,7 +808,7 @@ class clusterMovie(movie):
                     mnt=cv2.moments(cnt[c])
                     if clsize[0]<mnt['m00']<clsize[1]:
                         count+=1
-                        blobs=np.vstack((blobs,np.array([framenum,count,mnt['m00'], mnt['m01']/mnt['m00'], mnt['m10']/mnt['m00'],-1])))
+                        blobs=np.vstack((blobs,np.array([framenum,count,mnt['m00'], mnt['m10']/mnt['m00'], mnt['m01']/mnt['m00'],-1])))
                 if vorflag and blobs.shape[0]>1 and self.parameters['circle'][0]!=0:
                     try:
                         newpoints=[]
@@ -820,7 +822,15 @@ class clusterMovie(movie):
                         vor=Voronoi(pts)
                         for i in range(blobs.shape[0]):
                             r=vor.regions[vor.point_region[i]]
-                            blobs[i,-1]=PolygonArea(vor.vertices[r])
+                            if -1 not in r: 
+                                blobs[i,-1]=PolygonArea(vor.vertices[r])
+                                if framenum%(spacing*imgspacing)==0 and imgspacing>0:
+                                    col=tuple([int(255*c) for c in cm.jet(i*255/len(vor.points))])[:3]
+                                    cv2.polylines(vorIm, [(vor.vertices[r]).astype(np.int32)], True, col[:3], 2)
+                                    cv2.circle(vorIm, (int(blobs[i,3]),int(blobs[i,4])),5,(255,0,0),-1)
+                                if framenum%(spacing*imgspacing)==0 and imgspacing!=-1: 
+                                    cv2.circle(vorIm, (int(circ[0]),int(circ[1])), int(circ[2]),(0,0,255),2)
+                                    Image.fromarray(vorIm).save(self.datadir+'vorIm%05d.jpg'%framenum)
                     except QhullError:
                         print "Voronoi construction failed!"
                 allblobs=np.vstack((allblobs,blobs))
@@ -855,7 +865,7 @@ class imStack(movie):
             framelim=(0,1e8)
         self.parameters={            
             'framerate':framerate, 'sphericity':-1.,#floats
-            'struct':1,'threshold':128, 'frames':frames, 'channel':0, 'blur':1,'spacing':1, #ints
+            'struct':1,'threshold':128, 'frames':frames, 'channel':0, 'blur':1,'spacing':1, 'imgspacing':-1,#ints
             'blobsize':(0,30),'imsize':shape,'crop':[0,0,shape[0],shape[1]], 'framelim':framelim,#tuples
             'sizepreview':True, 'invert':False, 'diskfit':False, 'mask':True           
             }
