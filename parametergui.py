@@ -5,7 +5,6 @@
 
 import wx
 import wx.lib.scrolledpanel as scp
-import wxmpl
 import numpy as np
 from PIL import Image
 from matplotlib import pylab as pl
