@@ -12,7 +12,6 @@ from matplotlib import pylab as pl
 from matplotlib import cm
 import matplotlib
 matplotlib.use('WXAgg')
-matplotlib.use('WXAgg')
 from matplotlib.backends.backend_wxagg import FigureCanvasWxAgg as FigureCanvas
 
 from matplotlib.backends.backend_wx import NavigationToolbar2Wx

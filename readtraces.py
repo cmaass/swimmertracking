@@ -486,7 +486,7 @@ class movie():
             print "closed trajectory: ",tr.number, tr.maxdist
         mov.release()
 
-    def plotMovie(self, outname=None, decim=10,scale=2, crop=[0,0,0,0], mask='trajectory',frate=10, cmap=cm.jet, bounds=(0,1e8), tr=True, channel=0, lenlim=1,christmas=False):
+    def plotMovie(self, outname=None, decim=10,scale=2, crop=[0,0,0,0], mask='trajectory',frate=10, cmap=cm.jet, bounds=(0,1e8), tr=True, channel=0, lenlim=1):
         """crop values: [left, bottom, right, top]"""
         if not outname: outname=self.datadir+basename(self.fname)[:-4]+'-traced.avi'
         mov=cv2.VideoCapture(self.fname)
@@ -508,8 +508,11 @@ class movie():
                 tr=np.loadtxt(ob)
                 #tr[:,0]=np.around(tr[:,0]/tr[0,0])
                 if tr.shape[0]>lenlim: 
-		  trajectories+=[tr]
-		  print tr.shape
+                    try:
+                        minNaN=np.min(np.isnan(sum(tr[:,2:4], axis=1)).nonzero()[0])
+                    except ValueError:
+                        minNaN=tr.shape[0]
+                    trajectories+=[tr[:minNaN,:]
         print '# of trajectories', len(trajectories)
         while success:
             if (bounds[0] <= count <= bounds[1]) and count%decim==0:
@@ -525,9 +528,6 @@ class movie():
                             pts = trajectories[i][:w[0],2:4].astype(np.int32) #check indices and shape!!!
                             colour=tuple([int(255*r) for r in cmap(np.float(i)/len(trajectories))[:3]])[::-1]
                             cv2.polylines(image,[pts],isClosed=False,color=colour,thickness=int(np.round(scale)))
-                            if christmas:
-                                try: cv2.circle(image,(np.int32(trajectories[i][w[0],1]),np.int32(trajectories[i][w[0],2])),np.int32(np.sqrt(trajectories[i][w[0],3]/np.pi)),(30,30,200),-2)
-                                except: pass
                 image=image[crop[0]:-crop[2],crop[1]:-crop[3]]
                 outim=imresize(image,1./scale)
                 if count%min(self.parameters['framelim'][1]/10,1000)==0: Image.fromarray(outim).save(self.datadir+'testim%06d.png'%count)
