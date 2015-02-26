@@ -512,7 +512,7 @@ class movie():
                         minNaN=np.min(np.isnan(sum(tr[:,2:4], axis=1)).nonzero()[0])
                     except ValueError:
                         minNaN=tr.shape[0]
-                    trajectories+=[tr[:minNaN,:]
+                    trajectories+=[tr[:minNaN,:]]
         print '# of trajectories', len(trajectories)
         while success:
             if (bounds[0] <= count <= bounds[1]) and count%decim==0:
