@@ -153,7 +153,7 @@ class movie():
             frames=0.
             framelim=(0,1e8)
         self.parameters={
-            'framerate':framerate, 'sphericity':-1.,#float
+            'framerate':framerate, 'sphericity':-1.,'xscale':-1.0,'yscale':-1.0,'zscale':-1.0,#float
             'imsize':shape,'blobsize':(0,30),'crop':[0,0,shape[0],shape[1]], 'framelim':framelim, 'circle':[shape[0]/2, shape[1]/2, int(np.sqrt(shape[0]**2+shape[1**2]))],#tuples
             'channel':0, 'blur':1, 'spacing':1, 'struct':1, 'threshold':128, 'frames':frames,#ints
             'sizepreview':True, 'invert':False, 'diskfit':False, 'mask':True #bools
@@ -172,7 +172,7 @@ class movie():
           if t[0].strip() in ['blobsize','imsize', 'crop','framelim', 'circle']:#tuple parameters
             tsplit=t[1][1:-1].split(',')
             self.parameters[t[0]]=tuple([int(it) for it in tsplit])
-          if t[0].strip() in ['framerate','sphericity']:#float parameters
+          if t[0].strip() in ['framerate','sphericity','xscale','yscale','zscale']:#float parameters
             self.parameters[t[0]]=float(t[1])
           if t[0].strip() in ['sizepreview','mask','diskfit','invert']:#boolean parameters
             self.parameters[t[0]]=str_to_bool(t[1])
@@ -509,8 +509,9 @@ class movie():
                 #tr[:,0]=np.around(tr[:,0]/tr[0,0])
                 if tr.shape[0]>lenlim: 
                     try:
-                        minNaN=np.min(np.isnan(sum(tr[:,2:4], axis=1)).nonzero()[0])
-                    except ValueError:
+                        minNaN=np.min(np.isnan(np.sum(tr[:,2:4], axis=1)).nonzero()[0])
+                        print 'NaN', ob, minNaN
+                    except:
                         minNaN=tr.shape[0]
                     trajectories+=[tr[:minNaN,:]]
         print '# of trajectories', len(trajectories)
@@ -553,9 +554,14 @@ class movie():
             num=int(''.join(c for c in basename(tr) if c in digits))
             self.trajectories[num]=trajectory(data,num)
 
-    def plotTrajectories(self,outname='plottrajectories.png', ntrajectories=-1, lenlimit=-1):
-        f0=self.getFrames(0, 1).astype(float)
-        pl.imshow(f0, cmap=cm.gray)
+    def plotTrajectories(self,outname='plottrajectories.png', ntrajectories=-1, lenlimit=-1, mpl=False, text=False):
+        f0=self.getFrames(0, 1)
+        print 'mpl', mpl
+        if mpl:
+            f0=f0.astype(float)
+            pl.imshow(f0, cmap=cm.gray)
+        else:
+            f0=np.dstack((f0,f0,f0))
         keys=self.trajectories.keys()
         if ntrajectories>0: trmax=ntrajectories
         else: trmax=len(keys)
@@ -564,11 +570,17 @@ class movie():
             cl=color=cm.jet(i/np.float(len(keys)))
             if tr.data.shape[0]>lenlimit and len(tr.data.shape)>1:
                 print tr.number, tr.data.shape
-                pl.plot(tr.data[:,2],tr.data[:,3],lw=.3, color=cl)
-                pl.text(tr.data[0,2], tr.data[0,3], str(tr.number), color=cl,fontsize=6)
-        pl.axis('off')
-        pl.savefig(self.datadir+outname,dpi=600)
-        pl.close('all')
+                if mpl:
+                    pl.plot(tr.data[:,2],tr.data[:,3],lw=.3, color=cl)
+                    if text: pl.text(tr.data[0,2], tr.data[0,3], str(tr.number), color=cl,fontsize=6)
+                else: 
+                    cv2.polylines(f0,[tr.data[2:4].astype(np.int32)],isClosed=False,color=cl,thickness=2)
+        if mpl:
+            pl.axis('off')
+            pl.savefig(self.datadir+outname,dpi=600)
+            pl.close('all')
+        else:
+            Image.fromarray(f0).save(self.datadir+outname)
 
 
     def plotTrajectory(self, num): #note xy-indices changed! Rerun analysis if trajectories look strange!
@@ -864,7 +876,7 @@ class imStack(movie):
             frames=0.
             framelim=(0,1e8)
         self.parameters={            
-            'framerate':framerate, 'sphericity':-1.,#floats
+        'framerate':framerate, 'sphericity':-1.,'xscale':1.0,'yscale':1.0,'zscale':1.0,#floats
             'struct':1,'threshold':128, 'frames':frames, 'channel':0, 'blur':1,'spacing':1, 'imgspacing':-1,#ints
             'blobsize':(0,30),'imsize':shape,'crop':[0,0,shape[0],shape[1]], 'framelim':framelim,#tuples
             'sizepreview':True, 'invert':False, 'diskfit':False, 'mask':True           

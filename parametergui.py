@@ -29,7 +29,7 @@ from sys import exc_info
 
 
 #this directory definition is changed in the source code at runtime which is probably a really bad idea but good for portability
-moviedir='/media/cmdata/datagoe/140916/'#end
+moviedir='/media/Sushi/datagoe/gunnar/100315/down_24micrompeframe_2015-03-10-155621-0000/'#end
 
 def GetBitmap(width=1, height=1, colour = (0,0,0) ):
     """Helper funcion to generate a wxBitmap of defined size and colour.
@@ -84,10 +84,11 @@ class StackWin(wx.Frame):
         
         try: 
 	  data=np.loadtxt(self.parent.movie.datadir+'coords.txt')
-	  xs=data[:,3]
-	  ys=data[:,4]
-	  zs=data[:,0]
-	  ss=data[:,2]
+	  xsc,ysc,zsc=self.parent.movie.parameters['xscale'],self.parent.movie.parameters['yscale'],self.parent.movie.parameters['zscale']
+	  xs=data[:,3]*xsc
+	  ys=data[:,4]*ysc
+	  zs=data[:,0]*zsc
+	  ss=data[:,2]*xsc/72.
 	  self.axes.scatter(xs, ys, zs,s=ss)
 	  scaling = np.array([getattr(self.axes, 'get_{}lim'.format(dim))() for dim in 'xyz'])
 	  self.axes.auto_scale_xyz(*[[np.min(scaling), np.max(scaling)]]*3)
@@ -519,7 +520,7 @@ class MyFrame(wx.Frame):
         self.movie=rt.nomovie()
         self.framenum=0
         self.parameters={
-            'framerate':0.,'sphericity':-1.0,
+            'framerate':0.,'sphericity':-1.0,'xscale':1.0,'yscale':1.0,'zscale':1.0,
             'imsize':(0,0),'blobsize':(5,90),'crop':[0]*4, 'framelim':(0,0), 'circle':[0,0,1e4],
             'frames':0,  'threshold':120, 'struct':5,  'channel':0, 'blur':1,'spacing':1, 'imgspacing':-1,
             'sizepreview':True, 'invert':False, 'diskfit':False, 'mask':True
@@ -931,6 +932,8 @@ class MyFrame(wx.Frame):
                 if len(image.shape)>2:
                     image=image[:,:,self.parameters['channel']]
                 print image.shape, len(image.shape)
+                if self.parameters['blur']>1:
+                    image=cv2.GaussianBlur(image,(self.parameters['blur'],self.parameters['blur']),0)
                 self.images['Single channel'] = image.copy()
                 thresh=rt.mxContr((self.images['Single channel']<self.parameters['threshold']).astype(int))
                 if self.parameters['struct']>0:
@@ -1048,7 +1051,7 @@ class MyFrame(wx.Frame):
                 if t[0].strip() in ['blobsize','imsize', 'crop', 'framelim','circle']:#tuple parameters
                     tsplit=t[1][1:-1].split(',')
                     self.parameters[t[0]]=tuple([int(float(it)) for it in tsplit]) #this is a bit of a hack, but strings with dots in them don't convert to int, apparently
-                if t[0].strip() in ['framerate','sphericity']:#float parameters
+                if t[0].strip() in ['framerate','sphericity','xscale','yscale','zscale']:#float parameters
                     self.parameters[t[0]]=float(t[1])
                 if t[0].strip() == 'channel':
                     self.channelCB.SetValue(t[1].strip())
