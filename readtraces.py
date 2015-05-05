@@ -804,7 +804,9 @@ class clusterMovie(movie):
             success,image=mov.read()
             if not success: break
             if framenum%spacing==0:
-                if imgspacing!=-1: vorIm=image.copy()
+                if imgspacing!=-1: 
+                    vorIm=image.copy()
+                    clustIm=image.copy()
                 image=image[:,:,channel]
                 blurIm=(mxContr(image)*mask+255*(1-mask))
                 blurIm=cv2.GaussianBlur(blurIm,(gkern,gkern),0)
@@ -816,12 +818,16 @@ class clusterMovie(movie):
                 cnt,hier=cv2.findContours(threshIm,cv2.RETR_TREE,cv2.CHAIN_APPROX_NONE)
                 blobs=np.empty((0,6))
                 count=0
+                if framenum%(spacing*imgspacing)==0 and imgspacing>0:
+                    savecnt=[]
                 for c in range(len(cnt)):
                     mnt=cv2.moments(cnt[c])
                     if clsize[0]<mnt['m00']<clsize[1]:
                         count+=1
                         blobs=np.vstack((blobs,np.array([framenum,count,mnt['m00'], mnt['m10']/mnt['m00'], mnt['m01']/mnt['m00'],-1])))
-                if vorflag and blobs.shape[0]>1 and self.parameters['circle'][0]!=0:
+                        if framenum%(spacing*imgspacing)==0 and imgspacing>0:
+                            savecnt+=[cnt[c]]
+                if vorflag and blobs.shape[0]>1 and circ[0]!=0:
                     try:
                         newpoints=[]
                         vor=Voronoi(blobs[:,3:5])
@@ -840,11 +846,18 @@ class clusterMovie(movie):
                                     col=tuple([int(255*c) for c in cm.jet(i*255/blobs.shape[0])])[:3]
                                     cv2.polylines(vorIm, [(vor.vertices[r]).astype(np.int32)], True, col[:3], 2)
                                     cv2.circle(vorIm, (int(blobs[i,3]),int(blobs[i,4])),5,(255,0,0),-1)
-                                if framenum%(spacing*imgspacing)==0 and imgspacing!=-1:
-                                    cv2.circle(vorIm, (int(circ[0]),int(circ[1])), int(circ[2]),(0,0,255),2)
-                                    Image.fromarray(vorIm).save(self.datadir+'vorIm%05d.jpg'%framenum)
+                        if framenum%(spacing*imgspacing)==0 and imgspacing>0:
+                            cv2.circle(vorIm, (int(circ[0]),int(circ[1])), int(circ[2]),(0,0,255),2)
+                            Image.fromarray(vorIm).save(self.datadir+'vorIm%05d.jpg'%framenum)
                     except QhullError:
                         print "Voronoi construction failed!"
+                if framenum%(spacing*imgspacing)==0 and imgspacing>0:
+                    count = 0
+                    for b in range(len(blobs)):
+                        cv2.putText(clustIm,str(count), (int(blobs[count,3]),int(blobs[count,4])), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,0,0),2)
+                        count +=1
+                        cv2.drawContours(clustIm,[savecnt[b]],-1,(0,255,120),2)
+                    Image.fromarray(clustIm).save(self.datadir+'clustIm%05d.jpg'%framenum)
                 allblobs=np.vstack((allblobs,blobs))
         np.savetxt(self.datadir+'clusters.txt',allblobs,fmt="%.2f", header="framenum cluster# area x y voronoiarea")
         print 'thresh', thresh, 'gkern',gkern, 'clsize', clsize, 'channel', channel, 'rng', rng, 'spacing', spacing, 'mask', maskfile
@@ -1221,3 +1234,21 @@ def circle_invert(pt, cr, integ=True):
     newpt=[cr[0]+(pt[0]-cr[0])*scf, cr[1]+(pt[1]-cr[1])*scf]
     if integ: newpt=[int(p) for p in newpt]
     return  newpt
+    
+    
+def randwalk(lgth,stiff,start=[0.,0.], step=1.,adrift=0.,anoise=.2, dist="const"):
+    """generates a 2d random walk with variable angular correlation and optional constant (+noise) angular drift.
+    Arguments: walk length "lgth", stiffness factor "stiff" - consecutive orientations are derived by adding stiff*(random number in [-1,1]).
+    Parameters "adrift" and "anoise" add a constant drift angle adrift modulated by a noise factor adrift*(random number in [-1,1]).
+    The dist parameter accepts non-constant step length distributions (right now, only cauchy/gaussian distributed random variables)"""
+    rw=[list(start)] #user provided initial coordinates: make (reasonably) sure it's a nested list type.
+    ang=[0]
+    #step lengths are precalculated for each step to account for 
+    if dist=="cauchy": steps=cauchy.rvs(size=lgth)
+    elif dist=="norm": steps=norm.rvs(size=lgth)
+    else: steps=array([step]*lgth) #Overkill for constant step length ;)
+    #first generate angular progression via cumulative sum of increments (random/stiff + drift terms)
+    angs=cumsum(stiff*uniform.rvs(size=lgth,loc=-1,scale=2)+adrift*(1.+anoise*uniform.rvs(size=lgth,loc=-1,scale=2)))
+    #x/y trace via steplength and angle for each step, some array reshuffling (2d conversion and transposition)
+    rw=concatenate([concatenate([array(start[:1]),cumsum(steps*sin(angs))+start[0]]),concatenate([array(start)[1:],cumsum(steps*cos(angs))+start[1]])]).reshape(2,-1).transpose()
+    return rw, angs
