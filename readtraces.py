@@ -4,6 +4,7 @@ from matplotlib import pyplot as pl  #this is Python's main scientific plotting 
 from matplotlib import cm
 import cv2 #computer vision library. interfaces with python over numpy arrays.
 import numpy as np
+from scipy import stats
 from sys import argv #for command line arguments
 from os.path import splitext, basename, exists, sep #some file path handling
 import os
@@ -155,7 +156,7 @@ class movie():
         self.parameters={
             'framerate':framerate, 'sphericity':-1.,'xscale':-1.0,'yscale':-1.0,'zscale':-1.0,#float
             'imsize':shape,'blobsize':(0,30),'crop':[0,0,shape[0],shape[1]], 'framelim':framelim, 'circle':[shape[0]/2, shape[1]/2, int(np.sqrt(shape[0]**2+shape[1**2]))],#tuples
-            'channel':0, 'blur':1, 'spacing':1, 'struct':1, 'threshold':128, 'frames':frames,'maxdist':-1,#ints
+            'channel':0, 'blur':1, 'spacing':1, 'struct':1, 'threshold':128, 'frames':frames,'imgspacing':-1,'maxdist':1e4,'lossmargin':10, 'lenlim':1,#ints
             'sizepreview':True, 'invert':False, 'diskfit':False, 'mask':True #bools
         }
 
@@ -167,7 +168,7 @@ class movie():
         text=text.split('\n')
         for t in text:
             t=t.split(': ')
-            if t[0].strip() in ['struct','threshold','frames', 'channel','blur','spacing','imgspacing','maxdist']:#integer parameters
+            if t[0].strip() in ['struct','threshold','frames', 'channel','blur','spacing','imgspacing','maxdist','lossmargin','lenlim']:#integer parameters
                 self.parameters[t[0]]=int(t[1])
             if t[0].strip() in ['blobsize','imsize', 'crop','framelim', 'circle']:#tuple parameters
                 tsplit=re.sub('[\s\[\]\(\)]','',t[1]).split(',')
@@ -385,13 +386,15 @@ class movie():
         mov.release()
         return images
 
-    def CoordtoTraj(self, tempfile='temp',lenlim=1, delete=True, breakind=1e9, maxdist=-1, lossmargin=10, spacing=1):#TODO Adjust for frame jumps!!!
+    def CoordtoTraj(self, tempfile='temp',lenlim=-1, delete=True, breakind=1e9, maxdist=-1, lossmargin=-1, spacing=1):#TODO Adjust for frame jumps!!!
         t0=time()
         if delete:
             for f in glob(self.datadir+'trajectory*.txt'): os.remove(f)
         if tempfile=='temp':tempfile=self.datadir+'temp' #TODO: 'coords.txt'!!!
         if tempfile=='coords.txt':tempfile=self.datadir+'coords.txt'
-        if self.parameters['maxdist']<0: maxdist=self.parameters['maxdist']
+        if maxdist<0: maxdist=self.parameters['maxdist']
+        if lossmargin<0: lossmargin=self.parameters['lossmargin'] #if not set, take parameter file value
+        if lenlim<0: lenlim=self.parameters['lenlim'] 
         dataArr=np.loadtxt(tempfile)
         trajectorycount=0
         frames=sorted(list(set(dataArr[:,0])))
@@ -421,12 +424,13 @@ class movie():
             np.savetxt(self.datadir+'trajectory%06d.txt'%tr.number, tr.data, fmt='%.2f',  header="frame particle# x y area")
             print "closed trajectory: ",tr.number, np.sqrt(tr.maxdist)
 
-    def findTrajectories(self,framelim=False, blobsize=False,lenlim=50, threshold=False, kernel=False, delete=False, invert=False, mask=False, channel=0, sphericity=-1., outpSpac=200, diskfit=True):
+    def findTrajectories(self,framelim=False, blobsize=False,lenlim=-1, threshold=False, kernel=False, delete=False, invert=False, mask=False, channel=0, sphericity=-1., outpSpac=200, diskfit=True):
         if not framelim: framelim=self.parameters['framelim']
         if not blobsize: blobsize=self.parameters['blobsize']
         if not threshold: threshold=self.parameters['threshold']
         if self.parameters['maxdist']<0: maxdist=self.parameters['maxdist']
         else: maxdist=self.parameters['maxdist']
+        if lenlim<0: lenlim=self.parameters['lenlim'] 
         if type(kernel).__name__!='ndarray': kernel=np.array([1]).astype(np.uint8)
         if type(mask).__name__=='str':
             try:
@@ -890,8 +894,8 @@ class imStack(movie):
             framelim=(0,1e8)
         self.parameters={
         'framerate':framerate, 'sphericity':-1.,'xscale':1.0,'yscale':1.0,'zscale':1.0,#floats
-            'struct':1,'threshold':128, 'frames':frames, 'channel':0, 'blur':1,'spacing':1, 'imgspacing':-1,#ints
-            'blobsize':(0,30),'imsize':shape,'crop':[0,0,shape[0],shape[1]], 'framelim':framelim,#tuples
+        'blobsize':(0,30),'imsize':shape,'crop':[0,0,shape[0],shape[1]], 'framelim':framelim,'circle':[shape[0]/2, shape[1]/2, int(np.sqrt(shape[0]**2+shape[1**2]))],#tuples
+            'channel':0, 'blur':1,'spacing':1,'struct':1,'threshold':128, 'frames':frames,  'imgspacing':-1,'maxdist':-1,'lossmargin':10, 'lenlim':1,#ints
             'sizepreview':True, 'invert':False, 'diskfit':False, 'mask':True
             }
 
@@ -1244,11 +1248,11 @@ def randwalk(lgth,stiff,start=[0.,0.], step=1.,adrift=0.,anoise=.2, dist="const"
     rw=[list(start)] #user provided initial coordinates: make (reasonably) sure it's a nested list type.
     ang=[0]
     #step lengths are precalculated for each step to account for 
-    if dist=="cauchy": steps=cauchy.rvs(size=lgth)
-    elif dist=="norm": steps=norm.rvs(size=lgth)
-    else: steps=array([step]*lgth) #Overkill for constant step length ;)
+    if dist=="cauchy": steps=stats.cauchy.rvs(size=lgth)
+    elif dist=="norm": steps=stats.norm.rvs(size=lgth)
+    else: steps=np.array([step]*lgth) #Overkill for constant step length ;)
     #first generate angular progression via cumulative sum of increments (random/stiff + drift terms)
-    angs=cumsum(stiff*uniform.rvs(size=lgth,loc=-1,scale=2)+adrift*(1.+anoise*uniform.rvs(size=lgth,loc=-1,scale=2)))
+    angs=np.cumsum(stiff*stats.uniform.rvs(size=lgth,loc=-1,scale=2)+adrift*(1.+anoise*stats.uniform.rvs(size=lgth,loc=-1,scale=2)))
     #x/y trace via steplength and angle for each step, some array reshuffling (2d conversion and transposition)
-    rw=concatenate([concatenate([array(start[:1]),cumsum(steps*sin(angs))+start[0]]),concatenate([array(start)[1:],cumsum(steps*cos(angs))+start[1]])]).reshape(2,-1).transpose()
+    rw=np.concatenate([np.concatenate([np.array(start[:1]),np.cumsum(steps*np.sin(angs))+start[0]]),np.concatenate([np.array(start)[1:],np.cumsum(steps*np.cos(angs))+start[1]])]).reshape(2,-1).transpose()
     return rw, angs

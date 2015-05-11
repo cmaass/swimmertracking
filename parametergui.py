@@ -29,7 +29,7 @@ from sys import exc_info
 
 
 #this directory definition is changed in the source code at runtime which is probably a really bad idea but good for portability
-moviedir='/media/cmdata/datagoe/140916/'#end
+moviedir='/media/cmdata/datagoe/Kyle Meienberg Archive/Data/Control/'#end
 
 def GetBitmap(width=1, height=1, colour = (0,0,0) ):
     """Helper funcion to generate a wxBitmap of defined size and colour.
@@ -272,7 +272,7 @@ class MyFrame(wx.Frame):
         threshLabel=wx.StaticText(paraPanel,-1,'Threshold')
         self.threshContr=wx.TextCtrl(paraPanel,200,'',size=(50,-1),style=wx.TE_PROCESS_ENTER)
         BGrngLabel=wx.StaticText(paraPanel,-1,'BG range')
-        self.BGrngContr=wx.TextCtrl(paraPanel,-1,'80,110',size=(50,-1),style=wx.TE_PROCESS_ENTER)
+        self.BGrngContr=wx.TextCtrl(paraPanel,-1,'120,155',size=(50,-1),style=wx.TE_PROCESS_ENTER)
         strLabel=wx.StaticText(paraPanel,-1,'Kernel size')
         self.strContr=wx.TextCtrl(paraPanel,201,'',size=(50,-1), style=wx.TE_PROCESS_ENTER)
         self.frameSldr = wx.Slider(paraPanel,202,value=0, minValue=0, maxValue=100, style=wx.SL_HORIZONTAL)
@@ -523,7 +523,7 @@ class MyFrame(wx.Frame):
         self.parameters={
             'framerate':0.,'sphericity':-1.0,'xscale':1.0,'yscale':1.0,'zscale':1.0,
             'imsize':(0,0),'blobsize':(5,90),'crop':[0]*4, 'framelim':(0,0), 'circle':[0,0,1e4],
-            'frames':0,  'threshold':120, 'struct':5,  'channel':0, 'blur':1,'spacing':1, 'imgspacing':-1,'maxdist':-1,
+            'frames':0,  'threshold':120, 'struct':5,  'channel':0, 'blur':1,'spacing':1, 'imgspacing':-1,'maxdist':-1,'lossmargin':10, 'lenlim':1,
             'sizepreview':True, 'invert':False, 'diskfit':False, 'mask':True
         }
         #erosion/dilation kernel. basically, a circle of radius "struct" as a numpy array.
@@ -865,7 +865,7 @@ class MyFrame(wx.Frame):
                         th=im.copy().astype(np.uint8)
                         contours, hierarchy=cv2.findContours(th,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
                         (xm,ym),rm=cv2.minEnclosingCircle(contours[0])
-                        self.parameters['circle']=[xm,ym,rm]
+                        self.parameters['circle']=[xm,self.parameters['imsize'][1]-ym,rm]
                         print self.parameters['circle']
                 except:
                     mask=np.zeros(self.movie.parameters['imsize'][::-1])+1.
@@ -927,6 +927,7 @@ class MyFrame(wx.Frame):
                         r=vor.regions[vor.point_region[i]]
                         col=tuple([int(255*c) for c in cm.jet(i*255/blobs.shape[0])])[:3]
                         cv2.polylines(self.images['Voronoi'], [(vor.vertices[r]).astype(np.int32)], True, col[:3], 2)
+                        cv2.circle(self.images['Voronoi'], (int(circ[0]),int(circ[1])), int(circ[2]),(0,0,255),2)
             self.scp.im.Redraw()
             try: self.HistoWin.Update(self, self.images[self.imType])
             except AttributeError: pass
@@ -1061,7 +1062,7 @@ class MyFrame(wx.Frame):
             text=text.split('\n')
             for t in text:
                 t=t.split(':')
-                if t[0].strip() in ['struct','threshold','frames', 'channel','blur','spacing','imgspacing','maxdist']:#integer parameters
+                if t[0].strip() in ['struct','threshold','frames', 'channel','blur','spacing','imgspacing','maxdist','lossmargin','lenlim']:#integer parameters
                     self.parameters[t[0]]=int(t[1].strip())
                 if t[0].strip() in ['blobsize','imsize', 'crop', 'framelim','circle']:#tuple parameters
                     tsplit=re.sub('[\s\[\]\(\)]','',t[1]).split(',')
@@ -1144,16 +1145,12 @@ class MyFrame(wx.Frame):
     def GetTrajectories(self,event):
         self.getTrajB.Disable()
         self.sb.SetStatusText("Working... Running trajectory analysis",1)
-        try:
-            lim=self.frameMinMaxContr.GetValue()
-            self.parameters['framelim']=(int(lim.split(',')[0]),int(lim.split(',')[1]))
-        except:
-            pass
-        if self.maskCheck.GetValue(): mask=self.movie.datadir+'mask.png'
-        else: mask=False
-        self.parameters['channel']=int(self.channelCB.GetValue())
-        self.movie.findTrajectories(framelim=self.parameters['framelim'], blobsize=self.parameters['blobsize'], threshold=self.parameters['threshold'],kernel=self.kernel, delete=True, invert=self.invCheck.GetValue(), mask=mask,channel=self.parameters['channel'], sphericity=self.parameters['sphericity'],diskfit=self.diskfitCheck.GetValue())
-        self.sb.SetStatusText(self.moviefile, 1)
+        dlg = wx.FileDialog(self, "Choose coordinate file", self.movie.datadir, style=wx.OPEN)
+        if dlg.ShowModal() == wx.ID_OK:
+            self.movie.CoordtoTraj(tempfile=dlg.GetPath(),lenlim=self.movie.parameters['lenlim'], delete=True, breakind=1e9, maxdist=self.movie.parameters['maxdist'], lossmargin=self.movie.parameters['lossmargin'], spacing=self.movie.parameters['spacing'])
+        else:
+            wx.MessageBox('Please provide/generate a coordinate file (via Get Coordinates).', 'Info', 
+            wx.OK | wx.ICON_INFORMATION)
         self.getTrajB.Enable()
 
 
