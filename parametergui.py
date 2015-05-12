@@ -29,7 +29,7 @@ from sys import exc_info
 
 
 #this directory definition is changed in the source code at runtime which is probably a really bad idea but good for portability
-moviedir='/media/cmdata/datagoe/Kyle Meienberg Archive/Data/Control/'#end
+moviedir='/media/cmdata/datagoe/mazes/manhattan/'#end
 
 def GetBitmap(width=1, height=1, colour = (0,0,0) ):
     """Helper funcion to generate a wxBitmap of defined size and colour.
@@ -1146,11 +1146,20 @@ class MyFrame(wx.Frame):
         self.getTrajB.Disable()
         self.sb.SetStatusText("Working... Running trajectory analysis",1)
         dlg = wx.FileDialog(self, "Choose coordinate file", self.movie.datadir, style=wx.OPEN)
+        flag=False
+        fname=''
         if dlg.ShowModal() == wx.ID_OK:
-            self.movie.CoordtoTraj(tempfile=dlg.GetPath(),lenlim=self.movie.parameters['lenlim'], delete=True, breakind=1e9, maxdist=self.movie.parameters['maxdist'], lossmargin=self.movie.parameters['lossmargin'], spacing=self.movie.parameters['spacing'])
+            fname=dlg.GetPath()
+            with open(fname,'r') as f: 
+                fileheader=f.readline()
+                if rt.COORDHEADER==fileheader: flag=True
         else:
-            wx.MessageBox('Please provide/generate a coordinate file (via Get Coordinates).', 'Info', 
-            wx.OK | wx.ICON_INFORMATION)
+            wx.MessageBox('Please provide/generate a coordinate file (via Get Coordinates).', 'Info', wx.OK | wx.ICON_INFORMATION)
+        if flag:
+            self.movie.CoordtoTraj(tempfile=fname,lenlim=self.parameters['lenlim'], delete=True, breakind=1e9, maxdist=self.parameters['maxdist'], lossmargin=self.parameters['lossmargin'], spacing=self.parameters['spacing'])
+        else:
+            wx.MessageBox('Please provide/generate a coordinate file (via Get Coordinates).', 'Info', wx.OK | wx.ICON_INFORMATION)
+                
         self.getTrajB.Enable()
 
 

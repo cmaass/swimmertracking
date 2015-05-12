@@ -36,6 +36,8 @@ digits = frozenset(digits)
 rmin=9 #particle size limits for Hough transform. (which we don't really use any more)
 rmax=30
 
+COORDHEADER='#frame particle# blobsize x y split_blob? [reserved] sphericity\n'
+
 
 class trajectory():
     """Single particle trajectory.
@@ -226,7 +228,7 @@ class movie():
         except OSError: pass
         dumpfile=open(self.datadir+'temp','a')
         allblobs=np.array([]).reshape(0,8)
-        dumpfile.write('#frame particle# blobsize x y split_blob? [reserved] sphericity\n')
+        dumpfile.write(COORDHEADER)
         counter=0
         while success and framenum<framelim[1]: #loop through frames
             framenum+=1
@@ -395,6 +397,11 @@ class movie():
         if maxdist<0: maxdist=self.parameters['maxdist']
         if lossmargin<0: lossmargin=self.parameters['lossmargin'] #if not set, take parameter file value
         if lenlim<0: lenlim=self.parameters['lenlim'] 
+        print """
+        maxdist: %f
+        lossmargin: %d
+        lenlim: %d
+        """%(maxdist, lossmargin,lenlim)
         dataArr=np.loadtxt(tempfile)
         trajectorycount=0
         frames=sorted(list(set(dataArr[:,0])))
