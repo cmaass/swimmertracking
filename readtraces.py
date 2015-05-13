@@ -1263,3 +1263,15 @@ def randwalk(lgth,stiff,start=[0.,0.], step=1.,adrift=0.,anoise=.2, dist="const"
     #x/y trace via steplength and angle for each step, some array reshuffling (2d conversion and transposition)
     rw=np.concatenate([np.concatenate([np.array(start[:1]),np.cumsum(steps*np.sin(angs))+start[0]]),np.concatenate([np.array(start)[1:],np.cumsum(steps*np.cos(angs))+start[1]])]).reshape(2,-1).transpose()
     return rw, angs
+
+def scp(a1,a2,b1,b2): 
+    """returns the cosine between two vectors a and b via the normalised dot product"""
+    return (a1*b1+a2*b2)/(np.sqrt(a1**2+a2**2)*np.sqrt(b1**2+b2**2))
+    
+    
+def correl(d,tmax):
+    """Cosine correlation function: """
+    c=[]
+    for dT in range(tmax):
+        c+=[np.mean(np.array([scp(d[j,0]-d[j-1,0], d[j,1]-d[j-1,1], d[j+dT,0]-d[j+dT-1,0], d[j+dT,1]-d[j+dT-1,1]) for j in range(1,len(d[:,0])-tmax)]))]
+    return c
