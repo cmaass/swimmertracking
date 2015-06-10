@@ -39,6 +39,7 @@ rmax=30
 COORDHEADER='#frame particle# blobsize x y split_blob? [reserved] sphericity\n'
 
 
+
 class trajectory():
     """Single particle trajectory.
         Attributes:
@@ -99,9 +100,7 @@ class trajectory():
             return nxt
 
 
-class nomovie():
-    def __init__(self):
-        self.typ='none'
+
 
 class movie():
     """Class for handling 2D video microscopy data. Additionally requires mplayer in the PATH.
@@ -163,9 +162,9 @@ class movie():
         }
 
 
-    def readParas(self):
+    def readParas(self, fname='paras.txt'):
         #self.parameters={}
-        with open(self.datadir+'paras.txt') as f:
+        with open(self.datadir+fname) as f:
             text=f.read()
         text=text.split('\n')
         for t in text:
@@ -388,7 +387,7 @@ class movie():
         mov.release()
         return images
 
-    def CoordtoTraj(self, tempfile='temp',lenlim=-1, delete=True, breakind=1e9, maxdist=-1, lossmargin=-1, spacing=1):#TODO Adjust for frame jumps!!!
+    def CoordtoTraj(self, tempfile='temp',lenlim=-1, delete=True, breakind=1e9, maxdist=-1, lossmargin=-1, spacing=1, idx=3, consolidate=False):#TODO Adjust for frame jumps!!!
         t0=time()
         if delete:
             for f in glob(self.datadir+'trajectory*.txt'): os.remove(f)
@@ -397,6 +396,12 @@ class movie():
         if maxdist<0: maxdist=self.parameters['maxdist']
         if lossmargin<0: lossmargin=self.parameters['lossmargin'] #if not set, take parameter file value
         if lenlim<0: lenlim=self.parameters['lenlim'] 
+        #the 'consolidate' flag produces an average coordinate/frame number and 3D size (voxel) for each closed trajectory and writes them into a single coordinate file to get z stack tracing. A second tracking run will then generate time tracking. No single trajectory output.
+        if consolidate: 
+            np.set_printoptions(precision=3,suppress=True)
+            if type(consolidate) is not str: stckf=open('stackcoord.txt','w')
+            else: stckf=open(consolidate,'w')
+            stckf.write(COORDHEADER)
         print """
         maxdist: %f
         lossmargin: %d
@@ -417,21 +422,36 @@ class movie():
                 breakind=1e9
                 print "break here?"
             for tr in activetrajectories.values():
-                blobs=tr.findNeighbour(blobs, frames[i], idx=3, lossmargin=lossmargin) #for each open trajectory, find corresponding particle in circle set
+                blobs=tr.findNeighbour(blobs, frames[i], idx=idx, lossmargin=lossmargin) #for each open trajectory, find corresponding particle in circle set
                 if not tr.opened: #if a trajectory is closed in the process (no nearest neighbour found), move to closed trajectories.
                     if tr.data.shape[0]>lenlim:
-                        np.savetxt(self.datadir+'trajectory%06d.txt'%tr.number, tr.data, fmt='%.2f', header="frame particle# x y area")
-                        print "closed trajectory: ", tr.number, tr.maxdist
+                        if not consolidate: 
+                            np.savetxt(self.datadir+'trajectory%06d.txt'%tr.number, tr.data, fmt='%.2f', header="frame particle# x y area")
+                            print "closed trajectory: ", tr.number, tr.maxdist
+                        else:
+                            trmean=list(np.mean(tr.data,axis=0))
+                            trmean[-1]=tr.data.shape[0]*trmean[-1]
+                            #reshuffle to get proper file format
+                            trmean=np.array(trmean[:2]+trmean[-1:]+trmean[2:4]+[0.,0.,1.])
+                            stckf.write(str(trmean)[1:-1].strip()+'\n')                            
                     del activetrajectories[tr.number]
             for blob in blobs: #if any circles are left in the set, open a new trajectory for each of them
                 trajectorycount+=1
                 activetrajectories[trajectorycount]=trajectory(np.array([[frames[i],blob[1],blob[3],blob[4],blob[2]]]),trajectorycount, maxdist=maxdist)
         print "trajectories:", len(activetrajectories)
         for tr in activetrajectories.values():
-            np.savetxt(self.datadir+'trajectory%06d.txt'%tr.number, tr.data, fmt='%.2f',  header="frame particle# x y area")
-            print "closed trajectory: ",tr.number, np.sqrt(tr.maxdist)
+            if not consolidate:
+                np.savetxt(self.datadir+'trajectory%06d.txt'%tr.number, tr.data, fmt='%.2f',  header="frame particle# x y area")
+                print "closed trajectory: ",tr.number, np.sqrt(tr.maxdist)
+            else:
+                trmean=list(np.mean(tr.data,axis=0))
+                trmean[-1]=tr.data.shape[0]*trmean[-1]
+                trmean=np.array(trmean[:2]+trmean[-1:]+trmean[2:4]+[0.,0.,1.])
+                stckf.write(str(trmean)[1:-1].strip()+'\n')
+        try: stckf.close()
+        except: pass
 
-    def findTrajectories(self,framelim=False, blobsize=False,lenlim=-1, threshold=False, kernel=False, delete=False, invert=False, mask=False, channel=0, sphericity=-1., outpSpac=200, diskfit=True):
+    def findTrajectories(self,framelim=False, blobsize=False,lenlim=-1, threshold=False, kernel=False, delete=False, invert=False, mask=False, channel=0, sphericity=-1., outpSpac=200, diskfit=True, idx=3):
         if not framelim: framelim=self.parameters['framelim']
         if not blobsize: blobsize=self.parameters['blobsize']
         if not threshold: threshold=self.parameters['threshold']
@@ -479,7 +499,7 @@ class movie():
                 else: blobs=np.array([]).reshape(0,8)
                 if framenum>framelim[0]:
                     for tr in activetrajectories.values():
-                        blobs=tr.findNeighbour(blobs, framenum, idx=3) #for each open trajectory, find corresponding particle in circle set
+                        blobs=tr.findNeighbour(blobs, framenum, idx=idx) #for each open trajectory, find corresponding particle in circle set
                         if not tr.opened: #if a trajectory is closed in the process (no nearest neighbour found), move to closed trajectories.
                             if tr.data.shape[0]>lenlim:
                                 np.savetxt(self.datadir+'trajectory%06d.txt'%tr.number, tr.data, fmt='%.2f',  header="frame particle# x y area")
@@ -558,18 +578,21 @@ class movie():
 
     def loadTrajectories(self, directory=None, mask='trajectory*.txt'):
         self.trajectories={}
+        print directory
         if not directory: directory=self.datadir
         trajectoryfiles=glob(directory+mask)
+        print trajectoryfiles
         for tr in trajectoryfiles:
             data=np.loadtxt(tr)
             num=int(''.join(c for c in basename(tr) if c in digits))
             self.trajectories[num]=trajectory(data,num)
 
-    def plotTrajectories(self,outname='plottrajectories.png', ntrajectories=-1, lenlimit=-1, mpl=False, text=False):
+    def plotTrajectories(self,outname='plottrajectories.png', ntrajectories=-1, lenlimit=-1, mpl=False, text=False, idx=2, cmap=False):
         f0=self.getFrames(0, 1)
         print 'mpl', mpl
         if mpl:
             f0=f0.astype(float)
+            if len(f0.shape)==3: f0=f0[:,:,0]
             pl.imshow(f0, cmap=cm.gray)
         else:
             f0=np.dstack((f0,f0,f0))
@@ -578,14 +601,14 @@ class movie():
         else: trmax=len(keys)
         for i in range(trmax):
             tr=self.trajectories[keys[i]]
-            cl=color=cm.jet(i/np.float(len(keys)))
+            cl=cm.jet(i/np.float(len(keys)))
             if tr.data.shape[0]>lenlimit and len(tr.data.shape)>1:
                 print tr.number, tr.data.shape
                 if mpl:
-                    pl.plot(tr.data[:,2],tr.data[:,3],lw=.3, color=cl)
-                    if text: pl.text(tr.data[0,2], tr.data[0,3], str(tr.number), color=cl,fontsize=6)
+                    pl.plot(tr.data[:,idx],tr.data[:,idx+1],lw=.3, color=cl)
+                    if text: pl.text(tr.data[0,idx], tr.data[0,idx+1], str(tr.number), color=cl,fontsize=6)
                 else:
-                    cv2.polylines(f0,[tr.data[2:4].astype(np.int32)],isClosed=False,color=cl,thickness=2)
+                    cv2.polylines(f0,[tr.data[idx:idx+2].astype(np.int32)],isClosed=False,color=cl,thickness=2)
         if mpl:
             pl.axis('off')
             pl.savefig(self.datadir+outname,dpi=600)
@@ -757,7 +780,7 @@ class movie():
             print "no trajectories found!"
             return numpy.np.zeros((0,0,0))
 
-    def maze(self, ROI1, ROI2, rootdir='', fmask='trajector*.txt', destination='cut'):
+    def maze(self, ROI1, ROI2, rootdir='', fmask='trajector*.txt', destination='cut', idx=2):
         self.mazetraj={}
         if rootdir=='': rootdir=self.datadir
         fmask=rootdir+fmask
@@ -770,8 +793,8 @@ class movie():
             data=np.loadtxt(f)
             num=int(''.join(c for c in basename(f) if c in digits))
             try:
-                ind_in=np.argmax((data[:,1]>ROI1[0])*(data[:,1]<ROI1[2])*(data[:,2]>ROI1[1])*(data[:,2]<ROI1[3]))
-                ind_out=np.argmax((data[:,1]>ROI2[0])*(data[:,1]<ROI2[2])*(data[:,2]>ROI2[1])*(data[:,2]<ROI2[3]))
+                ind_in=np.argmax((data[:,idx]>ROI1[0])*(data[:,idx]<ROI1[2])*(data[:,idx+1]>ROI1[1])*(data[:,idx+1]<ROI1[3]))
+                ind_out=np.argmax((data[:,idx]>ROI2[0])*(data[:,idx]<ROI2[2])*(data[:,idx+1]>ROI2[1])*(data[:,idx+1]<ROI2[3]))
                 if ind_out*ind_in>0:
                     duration=ind_out-ind_in
                     dist=sum(np.sqrt((np.roll(data[ind_in:ind_out,1],-1)-data[ind_in:ind_out,1])**2+(np.roll(data[ind_in:ind_out,2],-1)-data[ind_in:ind_out,2])**2)[:-1])
@@ -996,6 +1019,25 @@ class imStack(movie):
                     verts+=[[nfacets*len(keys)+1,nfacets*len(keys)-i-1,nfacets*len(keys)-i,-1] for i in range(nfacets-1)]+[[nfacets*len(keys)+1,nfacets*len(keys), nfacets*(len(keys)-1)+1,-1]]
                     np.savetxt(self.datadir+'vertfile%03d.txt'%t1.number,np.array(verts),fmt="%d")
 
+class nomovie(movie):    
+    def __init__(self,datadir):
+        self.typ="none"
+        self.bg=False
+        self.datadir=datadir
+        self.parameters={
+            'framerate':-1, 'sphericity':-1.,'xscale':1.0,'yscale':1.0,'zscale':1.0,#floats
+            'blobsize':(0,30),'imsize':(1920,1080),'crop':[0,0,1920,1080], 'framelim':1e9,'circle':(1000, 500,500),#tuples
+            'channel':0, 'blur':1,'spacing':1,'struct':1,'threshold':128, 'frames':1e9,  'imgspacing':-1,'maxdist':-1,'lossmargin':10, 'lenlim':1,#ints
+            'sizepreview':True, 'invert':False, 'diskfit':False, 'mask':True
+                    }
+                    
+    def getFrames(self,position, length=1, channel=0,spacing=1, fname=''):
+        if fname=='': fname=self.datadir+'bg.png'
+        im=np.array(Image.open(fname))
+        if len(im.shape)==3: im=im[:,:,channel]
+        images=np.dstack([im]*length)
+        return images
+                    
 
 def extract_blobs(bwImg, framenum, blobsize=(0,1e5), sphericity=-1, diskfit=True, outpSpac=200,returnCont=False, spherthresh=1e5):
     contours, hierarchy=cv2.findContours(bwImg,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
@@ -1263,6 +1305,24 @@ def randwalk(lgth,stiff,start=[0.,0.], step=1.,adrift=0.,anoise=.2, dist="const"
     #x/y trace via steplength and angle for each step, some array reshuffling (2d conversion and transposition)
     rw=np.concatenate([np.concatenate([np.array(start[:1]),np.cumsum(steps*np.sin(angs))+start[0]]),np.concatenate([np.array(start)[1:],np.cumsum(steps*np.cos(angs))+start[1]])]).reshape(2,-1).transpose()
     return rw, angs
+
+def rw3d(lgth,stiff,start=[0.,0.,0.], step=1.,adrift=0.,anoise=.2, dist="const"):
+    rw=[list(start)] #user provided initial coordinates: make (reasonably) sure it's a nested list type.
+    ang=[0]
+    #step lengths are precalculated for each step to account for 
+    if dist=="cauchy": steps=stats.cauchy.rvs(size=lgth)
+    elif dist=="norm": steps=stats.norm.rvs(size=lgth)
+    else: steps=np.array([step]*lgth) #Overkill for constant step length ;)
+    #first generate angular progression via cumulative sum of increments (random/stiff + drift terms)
+    thetas=np.cumsum(stiff*stats.uniform.rvs(size=lgth,loc=-1,scale=2)+adrift*(1.+anoise*stats.uniform.rvs(size=lgth,loc=-1,scale=2)))
+    phis=np.cumsum(stiff*stats.uniform.rvs(size=lgth,loc=-1,scale=2)+adrift*(1.+anoise*stats.uniform.rvs(size=lgth,loc=-1,scale=2)))
+    #x/y trace via steplength and angle for each step, some array reshuffling (2d conversion and transposition)
+    rw=np.concatenate([#
+    np.concatenate([np.array(start[:1]),np.cumsum(steps*np.sin(thetas)*np.sin(phis))+start[0]]),#
+    np.concatenate([np.array(start)[1:2],np.cumsum(steps*np.sin(thetas)*np.cos(phis))+start[1]]),#
+    np.concatenate([np.array(start)[2:],np.cumsum(steps*np.cos(thetas))+start[2]])
+    ]).reshape(3,-1).transpose()
+    return rw, thetas, phis
 
 def scp(a1,a2,b1,b2): 
     """returns the cosine between two vectors a and b via the normalised dot product"""

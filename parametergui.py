@@ -29,7 +29,7 @@ from sys import exc_info
 
 
 #this directory definition is changed in the source code at runtime which is probably a really bad idea but good for portability
-moviedir='/media/cmdata/datagoe/mazes/manhattan/'#end
+moviedir='/media/Corinna2/4MAGDEBOURG/Ribbonmotion/'#end
 
 def GetBitmap(width=1, height=1, colour = (0,0,0) ):
     """Helper funcion to generate a wxBitmap of defined size and colour.
@@ -518,7 +518,7 @@ class MyFrame(wx.Frame):
         self.imType='Original'
         self.images={'Original':'','Single channel':'','Background':'', 'BG treated':'', 'Mask':'','Threshold':'', 'Particles':''}
         self.moviefile=''
-        self.movie=rt.nomovie()
+        self.movie=rt.nomovie(moviedir+'/')
         self.framenum=0
         self.parameters={
             'framerate':0.,'sphericity':-1.0,'xscale':1.0,'yscale':1.0,'zscale':1.0,
