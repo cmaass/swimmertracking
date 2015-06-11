@@ -33,15 +33,15 @@ from scipy import optimize,stats
 np.set_printoptions(precision=3, suppress=True)
 digits = frozenset(digits)
 
-rmin=9 #particle size limits for Hough transform. (which we don't really use any more)
-rmax=30
-
-COORDHEADER='#frame particle# blobsize x y split_blob? [reserved] sphericity\n'
-sp=COORDHEADER.split()
-cheaderdict= {sp[i]:i for i in range(len(sp))}
-TRAJHEADER="frame particle# x y area"
+COORDHEADER2D='#frame particle# blobsize x y split_blob? [reserved] sphericity\n'
+sp=COORDHEADER2D.split()
+cheaderdict2D= {sp[i]:i for i in range(len(sp))}
+COORDHEADER3D='#frame stackframe particle# blobsize x y z t\n'
+sp=COORDHEADER3D.split()
+cheaderdict3D= {sp[i]:i for i in range(len(sp))}
+TRAJHEADER="frame particle# x y blobsize"
 sp=TRAJHEADER.split()
-theaderdict= {sp[i]:i for i in range(len(sp))}
+ttheadheaderdict= {sp[i]:i for i in range(len(sp))}
 
 
 
@@ -51,17 +51,19 @@ class trajectory():
         Attributes:
             data:  lengthX4 array, columns frame #, x, y coordinates, size
             opened: Boolean flag. Marks whether particle is still being tracked.
-            maxdist: maximum distance a particle travels between frames.
+            maxdist: maximum distance between blobs on consecutive frames to be counted into the same trajectory, in px. Default 
             number: trajectory ID.
+            dim: 
         Methods:
             findNeighbour: Finds the nearest neighbour in particle coordinate set from next frame."""
 
-    def __init__(self,data,number, maxdist=-1):
+    def __init__(self,data,number, maxdist=-1, dim=2):
         self.data=np.array(data) #trajectory coordinate series, lengthX3 array
         self.opened=True #flag: trajectory considered lost when no particle closer than max. distance in next frame.
-        self.maxdist=maxdist #set maximum distance (this is replaced by actual particle diameter right after trajectory is initialised)
+        self.maxdist=maxdist #set maximum distance
         self.number=number #trajectory ID
         self.lossCnt=0
+        self.dim=dim
 
     def findNeighbour(self,nxt, frIdx, idx=3, lossmargin=10, spacing=1):
         """Finds the nearest neighbour in particle coordinate set from next frame.
@@ -74,26 +76,31 @@ class trajectory():
         Returns next neighbour numpy array with matching particle removed for speedup and to avoid double counting."""
         
         #sort out what index information is given (OK, this is overkill):
+        #note: zIdx is always set but not used in case of 2D data. Probably more robust.
         try:
             if type(idx) is int or float: #scalar
-                arIdx,xIdx,yIdx=int(idx-1),int(idx),int(idx+1)
+                szIdx,xIdx,yIdx, zIdx=int(idx)-1,int(idx),int(idx)+1,int(idx)+2                
             elif hasattr(idx,'__getitem__'): #iterable
-                arIdx,xIdx,yIdx=int(idx[0]),int(idx[1]),int(idx[2])
+                szIdx,xIdx,yIdx=int(idx[0]),int(idx[1]),int(idx[2])
+                if self.dim==3: zIdx=int(idx[3])
+                else: zIdx=-1
             else:
                 raise TypeError("Scalar or iterable, please.")
             if type(idx) is dict:
-                arIdx,xIdx,yIdx=idx['blobsize'],idx['x'],idx['y']
-             
-        except KeyError, ValueError, TypeError, IndexError:
-            arIdx,xIdx,yIdx=2,3,4
-            print "Warning: Couldn't detect column indices.\nAssuming default values:\n\tsize: %d\n\tx: %d\n\ty: %d"%(arIdx,xIdx,yIdx)
+                szIdx,xIdx,yIdx=idx['blobsize'],idx['x'],idx['y']
+                if self.dim==3: zIdx=idx['z']
+                else: zIdx=-1             
+        except (KeyError, ValueError, TypeError, IndexError):
+            szIdx,xIdx,yIdx,zIdx=2,3,4,5
+            print "Warning: Couldn't detect column indices.\nAssuming default values:\n\tsize: %d\n\tx: %d\n\ty: %d%d\n\tz: %d"%(szIdx,xIdx,yIdx,zIdx)
 
         if frIdx-self.data[-1,0]>(lossmargin+1)*spacing: #if there are frame continuity gaps bigger than the loss tolerance, close trajectory!
             self.opened=False
             return nxt
 
         if nxt.size>0:
-            dist=(self.data[-1,2]-nxt[:,xIdx])**2+(self.data[-1,3]-nxt[:,yIdx])**2
+            if self.dim==2: dist=(self.data[-1,2]-nxt[:,xIdx])**2+(self.data[-1,3]-nxt[:,yIdx])**2
+            if self.dim==3: dist=(self.data[-1,2]-nxt[:,xIdx])**2+(self.data[-1,3]-nxt[:,yIdx])**2+(self.data[-1,4]-nxt[:,zIdx])**2
             m=min(dist)
         else:
             m=self.maxdist+1 #this will lead to trajectory closure
@@ -101,7 +108,8 @@ class trajectory():
         if m<self.maxdist:
             ind=(dist==m).nonzero()[0]
             try:
-                self.data=np.vstack((self.data,np.array([[frIdx,ind, nxt[ind,xIdx],nxt[ind,yIdx], nxt[ind,arIdx]]]))) #append new coordinates to trajectory
+                if self.dim==2: self.data=np.vstack((self.data,np.array([[frIdx,ind, nxt[ind,xIdx],nxt[ind,yIdx], nxt[ind,szIdx]]]))) #append new coordinates to trajectory
+                if self.dim==2: self.data=np.vstack((self.data,np.array([[frIdx,ind, nxt[ind,xIdx],nxt[ind,yIdx], nxt[ind,zIdx], nxt[ind,szIdx]]]))) #append new coordinates to trajectory
 
             except IndexError:
                 print "SOMETHING WRONG HERE!", self.data.shape, nxt.shape, frIdx, self.number #not sure what is.
@@ -110,8 +118,9 @@ class trajectory():
                     self.opened=False #close trajectory, don't remove particle from coordinate array.
                 else:
                     predCoord=lin_traj(self.data[-lossmargin:,2],self.data[-lossmargin:,3])
-                    if np.isnan(predCoord[0]): predCoord=self.data[-1][2:4]
-                    self.data=np.vstack((self.data,np.array([[frIdx, -1, predCoord[0], predCoord[1], self.data[-1,-1]]])))
+                    if np.isnan(predCoord[0]): predCoord=self.data[-1][2:2+self.dim]# if extrapolation fails, just keep particle where it is. 
+                    if self.dim==2: self.data=np.vstack((self.data,np.array([[frIdx, -1, predCoord[0], predCoord[1], self.data[-1,-1]]])))
+                    if self.dim==3: self.data=np.vstack((self.data,np.array([[frIdx, -1, predCoord[0], predCoord[1], predCoord[2], self.data[-1,-1]]])))
                 return nxt
             self.lossCnt=0
             return np.delete(nxt,ind,0) #remove particle and return coordinate set.
@@ -121,9 +130,11 @@ class trajectory():
                 self.data=self.data[:-lenlim,:] #cut extrapolated values
                 self.opened=False #close trajectory, don't remove particle from coordinate array.
             else:
-                predCoord=lin_traj(self.data[-lossmargin:,2],self.data[-lossmargin:,3])
-                if np.isnan(predCoord[0]): predCoord=self.data[-1][2:4]
-                self.data=np.vstack((self.data,np.array([[frIdx, -1,predCoord[0], predCoord[1],self.data[-1,-1]]])))
+                if self.dim==2: predCoord=lin_traj(self.data[-lossmargin:,2],self.data[-lossmargin:,3])
+                if self.dim==3: predCoord=lin_traj(self.data[-lossmargin:,2],self.data[-lossmargin:,3], self.data[-lossmargin:,4])
+                if np.isnan(predCoord[0]): predCoord=self.data[-1][2:2+self.dim]
+                if self.dim==2: self.data=np.vstack((self.data,np.array([[frIdx, -1,predCoord[0], predCoord[1],self.data[-1,-1]]])))
+                if self.dim==3: self.data=np.vstack((self.data,np.array([[frIdx, -1,predCoord[0], predCoord[1], predCoord[2], self.data[-1,-1]]])))
             return nxt
 
 
@@ -254,7 +265,7 @@ class movie():
         except OSError: pass
         dumpfile=open(self.datadir+'temp','a')
         allblobs=np.array([]).reshape(0,8)
-        dumpfile.write(COORDHEADER)
+        dumpfile.write(COORDHEADER2D)
         counter=0
         while success and framenum<framelim[1]: #loop through frames
             framenum+=1
@@ -414,27 +425,35 @@ class movie():
         mov.release()
         return images
 
-    def CoordtoTraj(self, tempfile='temp',lenlim=-1, delete=True, breakind=1e9, maxdist=-1, lossmargin=-1, spacing=1, idx=3, consolidate=False):#TODO Adjust for frame jumps!!!
-    """Needs more documentation!!
+    def CoordtoTraj(self, tempfile='temp',lenlim=-1, delete=True, maxdist=-1, lossmargin=-1, spacing=1, idx=3, consolidate=False):#TODO Adjust for frame jumps!!!
+        """Needs more documentation!!
         Input (only keywords):
             tempfile (default self.datadir+'temp'): path of file containing coordinate data
-            lenlim (default -1): minimum length of extracted trajectories (cleans out fragments)
-            delete (default 
-    """
+            lenlim (default -1 i.e. use self.parameters value): minimum length of extracted trajectories (cleans out fragments)
+            delete (default True): delete all previously generated trajectory files (always a good idea, as you might end up with an old/new muddle)
+            maxdist (default -1 -> self.parameters): maximum squared (!) distance between blobs on consecutive frames to be counted into the same trajectory, in px. See trajectory object.
+            lossmargin (default -1, ->self.parameters): See trajectory.findNeighbour method, number of extrapolated coordinates/frames before particle is considered lost.
+            spacing (default 1): for decimated movies. See trajectory.findNeighbour method.
+            idx (default=3): column index of 'x' data. This keyword is only used if the file has no usable header from which columns can be mapped (see COORDHEADER2D variable and txtheader function) 
+            consolidate (default False, change to filename/path string): Used for 3D stacks only. Instead of writing each trajectory into a separate file, put mean of frame, x, y and sum of areas into file (name provided by keyword). 
+        Output: no return value. generates either lots of numbered 'trajectory000xx.txt' files or a single new coordinate file in the movie's data directory.
+            
+        """
         t0=time()
         if delete:
             for f in glob(self.datadir+'trajectory*.txt'): os.remove(f)
         if tempfile=='temp':tempfile=self.datadir+'temp' #TODO: 'coords.txt'!!!
         if tempfile=='coords.txt':tempfile=self.datadir+'coords.txt'
-        if maxdist<0: maxdist=self.parameters['maxdist']
-        if lossmargin<0: lossmargin=self.parameters['lossmargin'] #if not set, take parameter file value
+        if maxdist<0: maxdist=self.parameters['maxdist'] #if not set, take parameter file value. SQUARED VALUE!
+        if lossmargin<0: lossmargin=self.parameters['lossmargin'] 
         if lenlim<0: lenlim=self.parameters['lenlim'] 
         #the 'consolidate' flag produces an average coordinate/frame number and 3D size (voxel) for each closed trajectory and writes them into a single coordinate file to get z stack tracing. A second tracking run will then generate time tracking. No single trajectory output.
         if consolidate: 
+        #TODO: for particles at the upper/lower boundaries, this would result in trajectories spanning 2 stacks. FIX THIS! (means we need the reversal points. Consider writing a new CoordtoTraj for the stack data type)
             np.set_printoptions(precision=3,suppress=True)
             if type(consolidate) is not str: stckf=open('stackcoord.txt','w')
             else: stckf=open(consolidate,'w')
-            stckf.write(COORDHEADER)
+            stckf.write(TRAJHEADER)
         print """
         maxdist: %f
         lossmargin: %d
@@ -444,10 +463,12 @@ class movie():
         #here, extract column headers
         colheaders=txtheader(tempfile)
         try:
-            arIdx,frIdx,xIdx,yIdx=colheaders['blobsize'],colheaders['frame'],colheaders['x'],colheaders['y']
+            szIdx,frIdx,ptIdx,xIdx,yIdx=colheaders['blobsize'],colheaders['particle#'],colheaders['frame'],colheaders['x'],colheaders['y']
+            try: zIdx=colheaders['z']
+            except KeyError: zIdx=-1 #if there's no z do nothing.
         except KeyError:
-            arIdx,frIdx, xIdx, yIdx =idx-1,0, idx, idx+1
-            print "Warning: Couldn't extract column headers from data file.\nAssuming default/keyword values for column indices:\n\t area: \n\tframe #: %d\n\tx: %d\n\ty: %d"%(arIdxfrIdx,xIdx,yIdx)            
+            szIdx,frIdx, ptIdx,xIdx, yIdx, zIdx =idx-1,0,1, idx, idx+1, idx+2
+            print "Warning: Couldn't extract column headers from data file.\nAssuming default/keyword values for column indices:\n\t blobsize: \n\tframe #: %d\n\tparticle # in frame: %d\n\tx: %d\n\ty %d\n\tz: %d"%(szIdx,frIdx,ptIdx,xIdx,yIdx, zIdx)            
         trajectorycount=0
         frames=sorted(list(set(dataArr[:,frIdx])))
         #put in frame range here!
@@ -458,11 +479,8 @@ class movie():
             blobs,dataArr=np.split(dataArr, [arrInd])
             if frames[i]%400==0:
                 print "framenum", frames[i], 'remaining data', dataArr.shape, 'active traj.', len(activetrajectories), 'time', time()-t0
-            if frames[i]>breakind:
-                breakind=1e9
-                print "break here?"
             for tr in activetrajectories.values():
-                blobs=tr.findNeighbour(blobs, frames[i], idx=(arIdx,xIdx,yIdx), lossmargin=lossmargin) #for each open trajectory, find corresponding particle in circle set
+                blobs=tr.findNeighbour(blobs, frames[i], idx=(szIdx,xIdx,yIdx,zIdx), lossmargin=lossmargin) #for each open trajectory, find corresponding particle in circle set
                 if not tr.opened: #if a trajectory is closed in the process (no nearest neighbour found), move to closed trajectories.
                     if tr.data.shape[0]>lenlim:
                         if not consolidate: 
@@ -471,11 +489,9 @@ class movie():
                         else:
                             trmean=list(np.mean(tr.data,axis=0))
                             trmean[-1]=tr.data.shape[0]*trmean[-1]
-                            #reshuffle to get proper file format
-                            trmean=np.array(trmean[:2]+trmean[-1:]+trmean[2:4]+[0.,0.,1.])
                             stckf.write(str(trmean)[1:-1].strip()+'\n')                            
                     del activetrajectories[tr.number]
-            for blob in blobs: #if any circles are left in the set, open a new trajectory for each of them
+            for blob in blobs: #if any particles are left in the set, open a new trajectory for each of them
                 trajectorycount+=1
                 activetrajectories[trajectorycount]=trajectory(np.array([[frames[i],blob[1],blob[3],blob[4],blob[2]]]),trajectorycount, maxdist=maxdist)
         print "trajectories:", len(activetrajectories)
@@ -486,7 +502,6 @@ class movie():
             else:
                 trmean=list(np.mean(tr.data,axis=0))
                 trmean[-1]=tr.data.shape[0]*trmean[-1]
-                trmean=np.array(trmean[:2]+trmean[-1:]+trmean[2:4]+[0.,0.,1.])
                 stckf.write(str(trmean)[1:-1].strip()+'\n')
         try: stckf.close()
         except: pass
@@ -867,7 +882,7 @@ class clusterMovie(movie):
                         cv2.drawContours(clustIm,[savecnt[b]],-1,(0,255,120),2)
                     Image.fromarray(clustIm).save(self.datadir+'clustIm%05d.jpg'%framenum)
                 allblobs=np.vstack((allblobs,blobs))
-        np.savetxt(self.datadir+'clusters.txt',allblobs,fmt="%.2f", header="framenum cluster# area x y voronoiarea")
+        np.savetxt(self.datadir+'clusters.txt',allblobs,fmt="%.2f", header="framenum cluster# blobsize x y voronoiarea")
         print 'thresh', thresh, 'gkern',gkern, 'clsize', clsize, 'channel', channel, 'rng', rng, 'spacing', spacing, 'mask', maskfile
 
         return allblobs
@@ -962,7 +977,31 @@ class imStack(movie):
         if len(contdict)>0:
             with open(self.datadir+'contours.pkl','wb') as f:
                 cPickle.dump(contdict,f,cPickle.HIGHEST_PROTOCOL)
-
+    
+    def Coord3D(coordfile,zframefile,stacksplitfile, outfile):
+        """Helper function to reshuffle the coordinate data created by the CoordtoTraj method with the consolidate keyword. 
+        Input data:
+            coordfile containing coordinates with columns as in header: %s
+                (CoordtoTraj output)
+            zframefile: file containing list of z positions per frame (1 column)
+            stacksplitfile: file containing list of reversal frames for stack splitting locations.
+        Output file:
+            data format as in %s"""%(TRAJHEADER,COORDHEADER3D)
+        try: os.remove(self.datadir+'temp')
+        except OSError: pass
+        output= open(outfile, 'a')
+        output.write(COORDHEADER3D)
+        colheaders=txtheader(coordfile)
+        try:
+            szIdx,frIdx,ptIdx,xIdx,yIdx=colheaders['blobsize'],colheaders['particle#'],colheaders['frame'],colheaders['x'],colheaders['y']
+        except KeyError:
+            szIdx,frIdx,ptIdx,xIdx,yIdx=theaderdict['blobsize'],theaderdict['particle#'],theaderdict['frame'],theaderdict['x'],theaderdict['y']
+            print "Warning: Couldn't extract column headers from data file.\nAssuming default values for column indices:\n\t blobsize: \n\tframe #: %d\n\tparticle # in frame: %d\n\tx: %d\n\ty %d"%(szIdx,frIdx,ptIdx,xIdx,yIdx) 
+        inpdata=np.loadtxt(coordfile)
+        
+        
+            
+            
 
     def blenderPrep(self, nfacets=10, smoothlen=5):
         self.loadTrajectories()
@@ -1169,10 +1208,12 @@ def leastsq_circle(x,y):
     residu   = np.sum((Ri - R)**2)
     return xc, yc, R, residu
 
-def lin_traj(x,y):
-    slope, intercept, r_value, p_value, std_err = stats.linregress(x,y)
+def lin_traj(x,y,z=False):
+    yslope, intercept, r_value, p_value, std_err = stats.linregress(x,y)
+    if z: zslope, intercept, r_value, p_value, std_err = stats.linregress(x,z)
     mx=np.mean((x-np.roll(x,1))[1:])
-    return np.array([x[-1]+mx, y[-1]+slope*mx])
+    if not z: return np.array([x[-1]+mx, y[-1]+yslope*mx])
+    else: return np.array([x[-1]+mx, y[-1]+yslope*mx], z[-1]+zslope*mx])
 
 #http://stackoverflow.com/questions/24467972/calculate-area-of-polygon-given-x-y-coordinates
 def PolygonArea(corners):

@@ -20,6 +20,7 @@ randwalk,dum,my=rt.rw3d(25*j,0.05)
 randwalk[:,2]=15*(randwalk[:,2]-min(randwalk[:,2]))/(max(randwalk[:,2])-min(randwalk[:,2]))
 lindata=(np.array([[range(25*j)]*3])*np.array([0.1,0.07,0.005]).reshape(3,-1)).transpose()
 zdata=np.array((list(np.linspace(zmin,zmax,j))+list(np.linspace(zmin,zmax,j)[::-1]))*26)
+switchframes=np.linspace(0,3120,53)
 
 a=np.polyfit(range(j-2),zdata[:j-2],1)[0]
 print 'a', a
