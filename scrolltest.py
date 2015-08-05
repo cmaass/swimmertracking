@@ -27,11 +27,10 @@ import readtraces as rt
 from random import randint
 from sys import exc_info
 from glob import glob
-import platform
 
 
 #this directory definition is changed in the source code at runtime which is probably a really bad idea but good for portability
-moviedir='/media/Corinna2/datagoe/gunnar/Corinna/'#end
+moviedir='/media/corinna/Corinna2/datagoe/gunnar/090615/'#end
 helpzip='parameterguihelp.zip'
 
 def GetBitmap(width=1, height=1, colour = (0,0,0) ):
@@ -224,7 +223,7 @@ class MyImage(wx.StaticBitmap):
     def OnLeftDown(self,event):
         ctrlstate=wx.GetKeyState(wx.WXK_CONTROL)
         pt=event.GetPosition()
-        if platform.system()!='Windows': pt=self.parent.CalcUnscrolledPosition(pt)
+        pt=self.parent.CalcUnscrolledPosition(pt)
         self.savestatus=self.pparent.sb.GetStatusText(0)
         if ctrlstate: #record click position for director analysis!
             x,y=pt.x/self.scale,pt.y/self.scale
@@ -306,7 +305,7 @@ class MyFrame(wx.Frame):
         threshLabel=wx.StaticText(paraPanel,-1,'Threshold')
         self.threshContr=wx.TextCtrl(paraPanel,200,'',size=(50,-1),style=wx.TE_PROCESS_ENTER)
         BGrngLabel=wx.StaticText(paraPanel,-1,'BG range')
-        self.BGrngContr=wx.TextCtrl(paraPanel,217,'120,255',size=(50,-1),style=wx.TE_PROCESS_ENTER)
+        self.BGrngContr=wx.TextCtrl(paraPanel,-1,'120,255',size=(50,-1),style=wx.TE_PROCESS_ENTER)
         strLabel=wx.StaticText(paraPanel,-1,'Kernel size')
         self.strContr=wx.TextCtrl(paraPanel,201,'',size=(50,-1), style=wx.TE_PROCESS_ENTER)
         self.frameSldr = wx.Slider(paraPanel,202,value=0, minValue=0, maxValue=100, style=wx.SL_HORIZONTAL)
@@ -540,7 +539,6 @@ class MyFrame(wx.Frame):
         self.Bind(wx.EVT_CHECKBOX, self.ReadParas, id=214)
         self.Bind(wx.EVT_TEXT_ENTER, self.ReadParas, id=215)
         self.Bind(wx.EVT_TEXT_ENTER, self.ReadParas, id=216)
-        self.Bind(wx.EVT_TEXT_ENTER, self.ReadParas, id=217)
         self.Bind(wx.EVT_TEXT_ENTER, self.ReadParas, id=651)
         # bindings handling the image display (groupof radio buttons)
         self.Bind(wx.EVT_BUTTON, self.GetClusters, id=501)
@@ -563,7 +561,7 @@ class MyFrame(wx.Frame):
         self.framenum=0
         self.parameters={
             'framerate':0.,'sphericity':-1.0,'xscale':1.0,'yscale':1.0,'zscale':1.0,
-            'imsize':(0,0),'blobsize':(5,90),'crop':[0]*4, 'framelim':(0,0), 'circle':[0,0,1e4],'BGrange':[128,255],
+            'imsize':(0,0),'blobsize':(5,90),'crop':[0]*4, 'framelim':(0,0), 'circle':[0,0,1e4],
             'frames':0,  'threshold':120, 'struct':5,  'channel':0, 'blur':1,'spacing':1, 'imgspacing':-1,'maxdist':-1,'lossmargin':10, 'lenlim':1,
             'sizepreview':True, 'invert':False, 'diskfit':False, 'mask':True
         }
@@ -573,7 +571,6 @@ class MyFrame(wx.Frame):
         self.strContr.SetValue(str(self.parameters['struct']))
         self.threshContr.SetValue(str(self.parameters['threshold']))
         self.psizeContr.SetValue(str(self.parameters['blobsize'])[1:-1])
-        self.BGrngContr.SetValue(str(self.parameters['BGrange'])[1:-1])
         self.frameMinMaxContr.SetValue("%d,%d"%self.parameters['framelim'])
         self.frameSpacContr.SetValue("%d"%(self.parameters['spacing']))
         self.blurContr.SetValue(str(self.parameters['blur']))
@@ -1083,9 +1080,6 @@ class MyFrame(wx.Frame):
             s=self.frameMinMaxContr.GetValue() #text field
             self.parameters['framelim']=(int(s.split(',')[0]),int(s.split(',')[1]))
         if evID==216: self.navSpac=int(self.navSpacContr.GetValue())
-        if evID==217:
-            s=self.BGrngContr.GetValue() #text field
-            self.parameters['BGrange']=(int(s.split(',')[0]),int(s.split(',')[1]))
         if evID==651:
             if self.movie.typ=="3D stack":
                 try:
@@ -1130,7 +1124,7 @@ class MyFrame(wx.Frame):
                 t=t.split(':')
                 if t[0].strip() in ['struct','threshold','frames', 'channel','blur','spacing','imgspacing','maxdist','lossmargin','lenlim']:#integer parameters
                     self.parameters[t[0]]=int(t[1].strip())
-                if t[0].strip() in ['blobsize','imsize', 'crop', 'framelim','circle', 'BGrange']:#tuple parameters
+                if t[0].strip() in ['blobsize','imsize', 'crop', 'framelim','circle']:#tuple parameters
                     tsplit=re.sub('[\s\[\]\(\)]','',t[1]).split(',')
                     self.parameters[t[0]]=tuple([int(float(it)) for it in tsplit]) #this is a bit of a hack, but strings with dots in them don't convert to int, apparently
                 if t[0].strip() in ['framerate','sphericity','xscale','yscale','zscale']:#float parameters
@@ -1144,7 +1138,6 @@ class MyFrame(wx.Frame):
             else: self.kernel=False
             self.threshContr.SetValue(str(self.parameters['threshold']))
             self.psizeContr.SetValue(str(self.parameters['blobsize']).replace(' ','')[1:-1])
-            self.BGrngContr.SetValue(str(self.parameters['BGrange']).replace(' ','')[1:-1])
             self.sphericityContr.SetValue("%.2f"%self.parameters['sphericity'])
             self.blurContr.SetValue("%d"%self.parameters['blur'])
             self.frameSpacContr.SetValue("%d"%self.parameters['spacing'])

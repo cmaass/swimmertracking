@@ -41,9 +41,10 @@ cheaderdict3D= {sp[i]:i for i in range(len(sp))}
 TRAJHEADER2D="#frame particle# blobsize x y\n"
 sp=TRAJHEADER2D[1:].split()
 theaderdict2D= {sp[i]:i for i in range(len(sp))}
-TRAJHEADER3D=COORDHEADER3D#TODO: needs time column and z!!!
+TRAJHEADER3D="#frame stackframe particle# blobsize x y z t\n"#TODO: needs time column and z!!!
 sp=TRAJHEADER3D[1:].split()
 theaderdict3D= {sp[i]:i for i in range(len(sp))}
+
 ZDATAHEADER="#frame t z\n"
 sp=ZDATAHEADER[1:].split()
 zheaderdict= {sp[i]:i for i in range(len(sp))}
@@ -72,7 +73,7 @@ class trajectory():
         self.lossCnt=0
         self.dim=dim
 
-    def findNeighbour(self,nxt, frNum, stFrNum=0, idx=False, lossmargin=10, spacing=1, consolidate=False,xsc=1.,ysc=1.,zsc=1.):
+    def findNeighbour(self,nxt, frNum, stFrNum=0, idx=False, lossmargin=10, spacing=1, consolidate=False):
         if frNum==4000: print self.number, self.data.shape
         """Finds the nearest neighbour in particle coordinate set from next frame.
         Accepts numpy array with coordinate data from the following movie frame with blobsize, x and y data.
@@ -96,8 +97,8 @@ class trajectory():
             return nxt
 
         if nxt.size>0:
-            if self.dim==3 and not consolidate: dist=((self.data[-1,4]-nxt[:,xIdxIn])*xsc)**2+((self.data[-1,5]-nxt[:,yIdxIn])*ysc)**2+((self.data[-1,6]-nxt[:,zIdxIn])*zsc)**2
-            else: dist=((self.data[-1,3]-nxt[:,xIdxIn])*xsc)**2+((self.data[-1,4]-nxt[:,yIdxIn])*ysc)**2
+            if self.dim==3 and not consolidate: dist=(self.data[-1,4]-nxt[:,xIdxIn])**2+(self.data[-1,4]-nxt[:,yIdxIn])**2+(self.data[-1,4]-nxt[:,zIdxIn])**2
+            else: dist=(self.data[-1,3]-nxt[:,xIdxIn])**2+(self.data[-1,4]-nxt[:,yIdxIn])**2
             m=min(dist)
         else:
             m=self.maxdist+1 #this will lead to trajectory closure
@@ -535,7 +536,7 @@ class movie():
         mov.release()
         return images
 
-    def CoordtoTraj(self, coordFile='coords.txt',lenlim=-1, delete=True, maxdist=-1, lossmargin=-1, spacing=1, idx=3, consolidate=False, dim=2, xsc=1.,ysc=1.,zsc=1.):#TODO Adjust for frame jumps!!!
+    def CoordtoTraj(self, coordFile='coords.txt',lenlim=-1, delete=True, maxdist=-1, lossmargin=-1, spacing=1, idx=3, consolidate=False, dim=2):#TODO Adjust for frame jumps!!!
         """Needs more documentation!!
         Input (only keywords):
             coordFile (default self.datadir+'coords.txt'): path of file containing coordinate data
@@ -566,7 +567,7 @@ class movie():
                 np.set_printoptions(precision=3,suppress=True)
                 if type(consolidate) is not str: stckf=open('stackcoord.txt','w')
                 else: stckf=open(consolidate,'w')
-                stckf.write(TRAJHEADER3D) #reshuffle here already
+                stckf.write('#frame stackframe particle# blobsize x y z t\n') #reshuffle here already
                 stFrIdx=colheaders['stackframe']
             else:
                 print "Please provide coordinate file with stack frame, z and t columns. (i.e. run addZT first)"
@@ -591,8 +592,7 @@ class movie():
         frames=sorted(list(set(dataArr[:,frIdx])))
         #put in frame range here!
         activetrajectories={}
-        stackframe,newstackframe=0,0  
-        print 'szIdx',szIdx,'frIDx',frIdx, 'ptIdx',ptIdx,'xIdx',xIdx,'yIdx', yIdx, 'zIdx',zIdx,'tIdx',tIdx
+        stackframe,newstackframe=0,0        
         for i in range(1,len(frames)):
             try: arrIdx=np.searchsorted(dataArr[:,frIdx], frames[i])
             except IndexError: raise
@@ -602,7 +602,7 @@ class movie():
             if frames[i]%400==0:
                 print "framenum", frames[i], 'remaining data', dataArr.shape, 'active traj.', len(activetrajectories), 'time', time()-t0
             for tr in activetrajectories.values():
-                blobs=tr.findNeighbour(blobs, frames[i-1], stFrNum=stackframe, idx=(szIdx,xIdx,yIdx,zIdx,tIdx), lossmargin=lossmargin, consolidate=consolidate,xsc=xsc,ysc=ysc,zsc=zsc) #for each open trajectory, find corresponding particle in circle set
+                blobs=tr.findNeighbour(blobs, frames[i-1], stFrNum=stackframe, idx=(szIdx,xIdx,yIdx,zIdx,tIdx), lossmargin=lossmargin, consolidate=consolidate) #for each open trajectory, find corresponding particle in circle set
                 if not tr.opened: #if a trajectory is closed in the process (no nearest neighbour found), move to closed trajectories.
 #                    print "data: \n", tr.data
                     
@@ -1213,27 +1213,67 @@ class imStack(movie):
             f.write('#frame stackframe particle# blobsize x y z t split_blob? sphericity\n')
             np.savetxt(f,coorddata, fmt='%.3f')  
         
+        
+    def Coord3D(self, coordFile='',ztFrameFile='',stackSplitFile='', outFile=''):
+        """Helper function to reshuffle the coordinate data created by the CoordtoTraj method with the consolidate keyword. 
+        Input data:
+            coordFile containing coordinates with columns as in header: %s
+                (CoordtoTraj output)
+            zframefile: file containing list of z positions per frame and frame recording time (2 columns)
+            stacksplitfile: file containing list of reversal frames for stack splitting locations.
+        Output file:
+            data format as in %s"""%(TRAJHEADER2D,COORDHEADER3D)
+        if coordFile=='': coordFile=self.datadir+'stackcoord.txt'
+        if ztFrameFile=='': ztFrameFile=self.datadir+'ztdata.txt'
+        if stackSplitFile=='': stackSplitFile=self.datadir+'turnpoints.txt'
+        if outFile=='': outFile=self.datadir+'coord3D.txt'
+        try: os.remove(outFile)
+        except OSError: print "No previous output to delete."
+        output= open(outFile, 'a')
+        output.write(COORDHEADER3D)
+        colheaders=txtheader(coordFile)
+        try:
+            szIdxIn,frIdxIn,ptIdxIn,xIdxIn,yIdxIn=colheaders['blobsize'],colheaders['frame'],colheaders['particle#'],colheaders['x'],colheaders['y']
+        except KeyError:
+            szIdxIn,frIdxIn,ptIdxIn,xIdxIn,yIdxIn=theaderdict2D['blobsize'],colheaders['blobsize'],theaderdict2D['particle#'],theaderdict2D['x'],theaderdict2D['y']
+            print "Warning: Couldn't extract column headers from data file.\nAssuming default values for column indices:\n\t blobsize: %d\n\tframe #: %d\n\tparticle # in frame: %d\n\tx: %d\n\ty %d"%(szIdxIn,frIdxIn,ptIdxIn,xIdxIn,yIdxIn) 
+        frIdxOut=cheaderdict3D['frame']
+        inData=np.loadtxt(coordFile)
+        dummy=np.zeros(inData.shape[0])-1.
+        #OK, this column order is inflexible. Probably overthinking this anyway. Always make sure it reflects COORDHEADER3D
+        outData=np.column_stack((inData[:,frIdxIn],dummy, inData[:,[ptIdxIn,szIdxIn,xIdxIn,yIdxIn]], dummy,dummy))
+        ztData=np.loadtxt(ztFrameFile)
+        dummy=txtheader(ztFrameFile)
+        try: zIdxIn,tIdxIn=dummy['height'],dummy['timestamp']
+        except KeyError:
+            zIdxIn,tIdxIn=0,1
+            print "Warning: Couldn't extract column headers from z and t data file.\nAssuming default values for column indices:\n\tz: %d\n\tt %d"%(zIdxIn,tIdxIn) 
+        stacksplit=np.loadtxt(stackSplitFile)
+        splitHdic=txtheader(stackSplitFile)
+        stacksplit=stacksplit[:,splitHdic['frame#']]
+        begIdx,endIdx,stfIdxOut=0,0,cheaderdict3D['stackframe']
+        for i in range(stacksplit.shape[0]):
+            endIdx=begIdx+np.searchsorted(outData[begIdx:,frIdxOut],stacksplit[i])
+            outData[begIdx:endIdx,stfIdxOut]=i
+            begIdx=endIdx
+        ztData=ztData[:,[zIdxIn,tIdxIn]]
+        ztDelta=ztData-np.roll(ztData,-1,axis=0)
+        frames=outData[:,frIdxIn].astype(np.uint32)
+        frDelta=outData[:,frIdxIn]-frames
+        frDelta=np.column_stack((frDelta,frDelta))
+        outData[:,-2:]=ztData[frames,:]+ztDelta[frames,:]*frDelta#TODO: use  header dictionary? in and out indices?
+        np.savetxt(output, outData, fmt='%.3f')
+        output.close()
 
-    def animateStack(self,elev=0.3*np.sin(np.linspace(0,np.pi,360)),azim=np.arange(360),output=False, fname=False, traj=True, dpi=150, frate=15, bitrate=1200, figsize=[5,4]):
-        """Creates a matplotlib animated movie from whatever stack/trajectory data the function can find.
-           Optional parameters: 
-               elev: elevation series, arraylike. Length is # of frames, default is 0.3*sin([0,pi]) with 360 frames.
-               azim: azimuth series, arraylike. Default arange(360)
-               output: output file. If not set explicitly, or False, default file name self.datadir+'stack_ani.avi'
-               fname: Input file with coordinates for scatter plot. If not set explicitly or False, function tries to use either 
-                    coord3D.txt, stackcoord.txt or coords.txt from mov.datadir (in this priority)
-               traj: Default True. If there are trajectory files, they will be plotted as lines
-               dpi, frate and bitrate: movie output parameters. Integers.
-        """
+    def animateStack(self,elev=0.3*np.sin(np.linspace(0,np.pi,360)),azi=np.arange(360),output=False, dpi=150, frate=15, bitrate=1200):
         if not output: 
             output=self.datadir+'stack_ani.avi'
-        fig=plt.figure(figsize=figsize)
+        fig=plt.figure()
         axes = Axes3D(fig)
         try:
-            if not fname: 
-                if os.path.exists(self.datadir+'coords.txt'): fname=self.datadir+'coords.txt'
-                if os.path.exists(self.datadir+'stackcoord.txt'): fname=self.datadir+'stackcoord.txt'
-                if os.path.exists(self.datadir+'coord3D.txt'): fname=self.datadir+'coord3D.txt'
+            if os.path.exists(self.datadir+'coords.txt'): fname=self.datadir+'coords.txt'
+            if os.path.exists(self.datadir+'stackcoord.txt'): fname=self.datadir+'stackcoord.txt'
+            if os.path.exists(self.datadir+'coord3D.txt'): fname=self.datadir+'coord3D.txt'
             print fname
             header=txtheader(fname)
             if len(header)>0: 
@@ -1253,33 +1293,30 @@ class imStack(movie):
             ss=data[:,sInd]*xsc/72.
             cs=data[:,tInd]
             cs=(cs-np.min(cs))/(np.max(cs)-np.min(cs))
-            print output
+            print cs
             
             def an_init():
                 axes.scatter(xs, ys, zs,s=ss, color=cm.jet(cs))
-                axes.set_xlabel('x')
-                axes.set_ylabel('y')
-                axes.set_zlabel('z')
-                if traj:
-                    trajfiles=glob(self.datadir+'trajectory??????.txt')
-                    for f in trajfiles:
-                        d=np.loadtxt(f)
-                        hDic=txtheader(f)
-                        try: axes.plot(d[:,hDic['x']],d[:,hDic['y']], zs=d[:,hDic['z']])
-                        except KeyError:
-                            print hDic
-                            print f
+                trajfiles=glob(self.datadir+'trajectory??????.txt')
+                for f in trajfiles:
+                    d=np.loadtxt(f)
+                    hDic=txtheader(f)
+                    try: axes.plot(d[:,hDic['x']],d[:,hDic['y']], zs=d[:,hDic['z']])
+                    except KeyError:
+                        print hDic
+                        print f
                         
             def an_animate(i):
-                axes.view_init(elev=elev[i],azim=azim[i])
+                axes.view_init(elev=elev[i],azim=azi[i])
             
-            anim = animation.FuncAnimation(fig, an_animate, init_func=an_init,frames=len(elev), interval=5, blit=True)
-            anim.save(output, writer=animation.FFMpegFileWriter(), fps=frate, dpi=dpi, bitrate=bitrate, extra_args=['-vcodec', 'libx264'])
+            anim = animation.FuncAnimation(fig, an_animate, init_func=an_init,
+                               frames=360, interval=5, blit=True)
+            anim.save(output, fps=frate, dpi=dpi, bitrate=bitrate, extra_args=['-vcodec', 'libx264'])
         except:
             print "sorry, plot failed! Is there a coordinate file?"
             raise
 
-    def plotStack(self, noscaling=False, frlim=1e6, fname=None, outfile=None, dpi=150):
+    def plotStack(self, noscaling=False, frlim=1e6, fname=None):
         fig=plt.figure()
         axes = Axes3D(fig)
         try:
@@ -1319,10 +1356,7 @@ class imStack(movie):
                 hDic=txtheader(f)
                 try: axes.plot(d[:,hDic['x']],d[:,hDic['y']], zs=d[:,hDic['z']])
                 except KeyError:
-                    print hDic   
-            if outfile:
-                print outfile
-                plt.savefig(outfile,dpi=dpi)                     
+                    print hDic                        
         except:
             print "sorry, plot failed! Is there a coordinate file?"
             raise
